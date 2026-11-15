@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Random 20-character, non-enumerable room IDs act as invite secrets.
+    // Every anonymously authenticated person who knows the room code can edit;
+    // this is a trusted friends' ledger, not a payment or authentication system.
+    match /rooms/{roomId} {
+      function validRoomId() {
+        return roomId.matches('[A-HJ-NP-Z2-9]{20}');
+      }
+      function signedIn() {
+        return request.auth != null && validRoomId();
+      }
+      function validShape(d) {
+        return d.keys().hasOnly([
+            'version','gameName','createdAt','players','seats','rates',
+            'nextSeq','creatorUid','updatedAt'
+          ]) && d.version == 2
+          && d.gameName is string && d.gameName.size() <= 35
+          && d.players is list && d.players.size() >= 4 && d.players.size() <= 100
+          && d.seats is list && d.seats.size() == 4
+          && d.rates is map
+          && d.nextSeq is int && d.nextSeq >= 1;
+      }
+      allow get: if signedIn();
+      allow list: if false; // Prevent browsing every room.
+      allow create: if signedIn()
+          && validShape(request.resource.data)
+          && request.resource.data.creatorUid == request.auth.uid
+          && request.resource.data.nextSeq == 1;
+      allow update: if signedIn()
+          && validShape(request.resource.data)
+          && request.resource.data.creatorUid == resource.data.creatorUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.nextSeq >= resource.data.nextSeq
+          && request.resource.data.nextSeq <= resource.data.nextSeq + 1;
+      allow delete: if false;
+
+      match /entries/{entryId} {
+        function signedInToExistingRoom() {
+          return request.auth != null
+              && roomId.matches('[A-HJ-NP-Z2-9]{20}')
+              && exists(/databases/$(database)/documents/rooms/$(roomId));
+        }
+        allow get, list: if signedInToExistingRoom();
+        allow create: if signedInToExistingRoom()
+            && request.resource.data.keys().hasOnly([
+                'id','seq','ts','type','subtype','winner','discarder','actor',
+                'flies','note','transfers','voided'
+              ])
+            && request.resource.data.id == entryId
+            && request.resource.data.seq is int && request.resource.data.seq >= 1
+            && request.resource.data.ts is int
+            && request.resource.data.type in ['win','kong','adjust']
+            && request.resource.data.transfers is list
+            && request.resource.data.transfers.size() >= 1
+            && request.resource.data.transfers.size() <= 3
+            && request.resource.data.voided == false;
+        allow update: if signedInToExistingRoom()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['voided','voidedAt'])
+            && request.resource.data.voided is bool
+            && request.resource.data.voidedAt is int;
+        allow delete: if false; // Preserve the audit trail; void instead.
+      }
+    }
+    match /{everything=**} { allow read, write: if false; }
+  }
+}
