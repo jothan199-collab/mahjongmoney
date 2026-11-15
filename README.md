@@ -1,72 +1,106 @@
-# 🀄 麻将钱账 v2 — GitHub Pages 四人麻将算钱
+# 🀄 麻将钱账 v4 — 多手机共享房间版
 
-无需安装应用程序，手机／电脑可直接使用。**本机版开箱即用。** 要让四位玩家各用自己的手机实时记账，需额外开启 Firebase 云端同步（配置一次，所有玩家共用）。
+## 先说明：GitHub Pages 与实时同步
 
-## 这次升级
+此版本**可以在 GitHub Pages 发布**，但跨手机实时同步需要额外的共享数据库。采用 Firebase Cloud Firestore；玩家不用注册、输入密码或选择「我是谁」，App 会在后台进行匿名认证以符合数据库安全规则。
 
-1. **中途换人：** 始终是东南西北四个座位，但可登记无限位曾参与的玩家。在「玩家／规则」中对座位按「确认换人」。旧玩家不会被抹去；他之前的收入、支出、胡牌和杠仍属于他。若旧玩家再次回来，选择其旧名字可沿用原来的账。
-2. **任意撤销：** 「全部记录」里每一笔都能点「撤销」，不限次数；点「恢复」可再加回原账（不硬删，留有审计轨迹）。撤销或恢复胡牌时会自动重新编号。
-3. **第几局：** 每次胡牌代表一局结束。开始先为「第1局」，在胡牌前记录的杠或转账都算这局；下一笔开始进入「第2局」。撤销胡牌时，局号按有效胡牌重新计算。
-4. **个人计分表：** 胡牌、自摸、点炮胡、点炮次数、明杠、暗杠、飞的粒数和每人的净输赢，离席玩家也会显示。
-5. **同房间多手机：** 配置 Firebase 后创建随机房间、分享网址，牌友在自己的手机选择「这部手机是」自己的身份；可自行登记胡牌或杠，记录通过 Cloud Firestore 自动同步。所有人互相信任，均可撤销／恢复历史交易。
+- **已配置 Firebase**：同一个 GitHub Pages URL，所有手机看到同一份云端房间列表和牌局；各房间独立记账，自动同步。
+- **未配置 Firebase**：自动使用旧版 v3 的浏览器本机存储。可管理多个房间，但**不同手机之间不会同步**。界面会显示「本机」或「云端」状态，避免误会。
+- 同一部手机换浏览器，或各自的手机，也能看到云端相同的数据，但需要联网。
 
-### 默认计费
+## 主要操作
 
-| 类型 | 规则 |
+1. 打开网址进入房间大厅；可创建多间房，例如「星期五麻将」和「第二桌」，两桌同时使用互不影响。
+2. 房间中的每张玩家卡片都有「🀄 姓名 胡牌」按钮。赢家点自己的名字，检查自摸／点炮、飞等项目，点击「确认记账」。不用先选择当前手机的操作者身份。
+3. 胡牌后结束当前一局；杠属于当局。其它手机的数据会自动更新。
+4. 每张卡片显示当前姓名水印、加大名字、当前余额、1–4 名排名。
+5. 历史记录可撤销或恢复**任何一笔**。统计表显示胡牌、自摸、点炮、杠、飞和净输赢。
+6. 「玩家／规则」可改名字及中途换人（离席者保留历史成绩）。
+7. 房间大厅可进入、删除和分享指定房间网址；不同手机打开**同一个基础网址**即可看到房间列表。
+8. 每笔金额按当时座位及规则计算，并在云端写入时使用数据库事务，降低多人同时登记时互相覆盖的风险。
+
+## 默认规则
+
+| 项目 | 默认 | 
 | --- | --- |
-| 自摸 | 另外三家各付 RM1 |
-| 点炮 | 点炮者付 RM2，其他两家各付 RM1 |
-| 飞 | 每粒飞，另三家各多付 RM1 |
-| 明杠 | 另外三家各付 RM2；也可选择指定一家支付 |
-| 暗杠 | 另外三家各付 RM4；也可选择指定一家支付 |
+| 自摸 | 其它三家各付 RM1 |
+| 点炮 | 点炮者 RM2；另两家各 RM1 |
+| 飞 | 每粒其它三家各付 RM1（与胡牌叠加） |
+| 明杠 | 其它三家各付 RM2；也可指定一家 |
+| 暗杠 | 其它三家各付 RM4；也可指定一家 |
 
-可在页面设置里修改金额。旧记录金额不受新的规则影响。系统用**整数仙 (sen)** 计算，避免金额浮点误差。
+金额可在每个房间分别调整。内部金额均以整数仙计算。
 
-## 上传到 GitHub Pages
+## 一次性 Firebase 配置（Spark 免费计划）
 
-1. 下载 ZIP 后解压，将 `index.html`、`app.js`、`firebase-config.js` 上传到你的 GitHub repository **根目录**。`README.md` 和 `firestore.rules` 也可以一起上传，便于以后维护。
-2. 在 GitHub repository 打开 **Settings → Pages**。
-3. 在 **Build and deployment** 选择 **Deploy from a branch**，Branch 选 `main`，Folder 选 `/ (root)`，按 **Save**。
-4. 发布后，打开 `https://你的用户名.github.io/你的仓库名/`。
+1. 打开 <https://console.firebase.google.com/>，**Create project**，例如 `mahjong-money-app`。选择 **Spark** 免费方案；Analytics 可关闭。
+2. **Project Overview → Web（`</>`）→ Register app**，名称可写 `Mahjong Calculator`。无需 Firebase Hosting，网站由 GitHub Pages 发布。
+3. **Build → Authentication → Sign-in method → Anonymous → Enable**（匿名认证不等于让用户选择自己的麻将玩家身份）。
+4. **Build → Firestore Database → Create database**，选择 **Standard edition**、数据库 ID `(default)`；地区按你需要选择。按控制台提示创建。
+5. Firestore → **Rules**，把项目文件 `firestore.rules` 的**全部内容**复制进去，并点击 **Publish**。单纯把 `firestore.rules` 上传 GitHub **不会**自动更新 Firestore 安全规则。
+6. **Project settings → General → Your apps → SDK setup and configuration → Config**，复制 `apiKey`、`authDomain`、`projectId`、`appId`。
+7. 编辑 `firebase-config.js`，把 `window.MAHJONG_FIREBASE_CONFIG = null;` 替换成：
 
-只做本机记账的话，此时已经可以用了。旧版保存在同一网址、同一浏览器的 `mahjong-money-app-v1` 资料会**自动转成 v2**（含旧输赢）。建议先导出 JSON 备份。**请勿把老版 `index.html` 留在仓库覆盖新版。**
+   ```javascript
+   window.MAHJONG_FIREBASE_CONFIG = {
+     apiKey: '这里填你的 apiKey',
+     authDomain: '这里填你的 authDomain',
+     projectId: '这里填你的 projectId',
+     appId: '这里填你的 appId'
+   };
+   ```
 
-## 启用多人实时同步（需要自己配置 Firebase，一次性设置）
+   注意不要上传服务器私钥、service account JSON 或 Firebase Admin SDK 凭据。网页的 Web config **不是管理员密钥**。
 
-本 App 仅是 **GitHub Pages 静态网页**，没有云端数据库就无法让四位玩家在不同手机上自动共享数据。按以下步骤配置：
+8. 把文件上传 GitHub，刷新网站。房间区域应显示「**云端已同步**」；如果显示「本机」，说明仍未填好 Firebase 配置；如果显示「连接错误」，按提示检查 Auth、Firestore Rules、网络及浏览器控制台。
 
-1. 打开 [Firebase Console](https://console.firebase.google.com/) → 建立项目（Create project）。
-2. 在项目中选择 **Add app → Web (`</>`)**，登记一个网页应用。复制它提供的 `firebaseConfig` 中的 `apiKey`、`authDomain`、`projectId`、`appId` 四个值。
-3. 编辑 GitHub 中的 `firebase-config.js`：把这四个值分别填入 `window.MAHJONG_FIREBASE_CONFIG` 的对应位置，保存／Commit。**不要改变量名称。**
-4. Firebase Console → **Authentication → Sign-in method → Anonymous**：开启匿名登入（Enable）。匿名登入不需要每位牌友注册邮箱。
-5. Firebase Console → **Firestore Database → Create database**：创建数据库，选择合适地区。正式使用前务必打开 **Rules**，把本项目的 `firestore.rules` 内容完整复制过去并 **Publish**。不要采用允许所有人读取／写入的测试规则。
-6. 打开更新后的 GitHub Pages，点击 **创建线上房间**，App 会生成一个20位随机房间码；点击 **复制邀请链接**发给三位牌友。
-7. 四人打开**同一个邀请链接**，各自在「这部手机是」选择自己当前的名字。之后在自己的手机登记胡牌或杠，大家会看到同一个账本与计分表。
-8. 有人离席时，任意玩家打开「玩家／规则」更换对应座位。新玩家可使用原链接加入同一房间并选其名字。旧玩家保留历史与余额。
+## GitHub Pages 部署 / 更新
 
-### 特别说明
+上传到 GitHub Repository 的**根目录**：
 
-- **手机身份不是权限限制。** 玩家身份仅用于默认选中自己，所有持有房间链接的牌友都可替任何人记录、撤销／恢复和换人。这适合互信牌友，不适合作为防作弊的支付系统。
-- 房间码很长且随机，**不要在公开网页展示个人房间链接**；知道房间码的人可以访问并修改该房间（在匿名登录后）。Firestore Rules 禁止列举房间、禁止硬删记录，并限制可修改字段，但**不能证明操作人确实是某位牌友**。
-- Firebase Web 配置通常可以公开；保护数据依靠 Auth、Firestore Rules 和安全的随机房间码。请根据 Firebase 官方建议监控使用量和配额。
-- **线上房间不能自动上传旧本机记账记录。** 创建房间从零开始。退出线上房间，旧本机账本仍然保留。
-- 线上房间的写操作**需要联网**。离线看见缓存不代表记录成功提交。请以页面显示「已记账」和其他手机出现记录为准。
-- 最后结算包括**所有曾参与者**。有人中途已经付清，软件不会自动知道已现金结账的事实，务必自行核对，避免再付一次。
-- 使用 Firestore 时会产生读写请求，是否收费取决于使用量及 Firebase 项目计划。
-- 当玩家非常多或账务记录极大量时需考虑数据分页、归档，以及生产级更严格的后端权限／稽核设计。
+- `index.html`
+- `app.js`
+- `cloud-sync.js`
+- `firebase-config.js`
+- `firestore.rules`（便于保存，但必须在 Firebase Console 另行 Publish）
+- `README.md`
+- `.nojekyll`（可选）
 
-## 保存和迁移
+在 Repository → **Settings → Pages → Deploy from a branch → main → /(root)** 发布。地址一般为：
 
-- 可导出 CSV：每笔付款人的逐项流水、局号与是否已撤销的状态。
-- 可导出 JSON：当前整个账本，包括已撤销记录。JSON 可在本机模式导入，旧版 v1 JSON 也支持。
-- 本机版数据保存在 `localStorage`，清理浏览器网站资料可能会导致丢失；请定期备份。
-- 线上版实时数据保存在用户**自己的 Firebase 项目**中，本应用的开发者不托管你的牌局。
+`https://你的GitHub用户名.github.io/你的Repository名称/`
 
-## 技术结构
+旧版 v2 的文件可能仍在仓库中，但新版不会再引用它们；以此 ZIP 包中的文件为准。
 
-- `index.html`: 手机优先的页面及样式
-- `app.js`: 所有账目、换人、统计、撤销／恢复、导出和 Firebase 同步功能
-- `firebase-config.js`: 云端项目配置（没有填写时自动退回本机模式）
-- `firestore.rules`: Firestore 安全规则，需要手动贴到 Firebase Console
+## 真实跨手机测试步骤
 
-使用 Firebase JS Web SDK 13.3.0 的官方 CDN ES Module；通过匿名认证、Cloud Firestore `onSnapshot` 实时订阅和 `runTransaction` 分配顺序号，减少多人同时记账造成的局数重复问题。
+1. 手机 A 和 B 打开同一个网址，确认两边状态都显示「云端已同步」。
+2. A 创建「第一桌」，B 无需刷新应能看见「第一桌」。
+3. A 进入房间，点击东位卡片的「胡牌」，确认记账，B 应自动更新余额、局数和记录。
+4. B 登记一次南位胡牌，A 应自动收到更新。
+5. A 创建「第二桌」，两部手机看到两个房间，分别记账；金额不会混用。
+6. 用「分享」复制房间链接，第三部手机打开可直达相应房间。
+
+## 旧版本数据迁移
+
+本机 v3 和云端 v4 是**两套不同存储**，不会在开启云端后自动把本机历史偷偷上传。
+
+如果要搬旧账：**在未启用 Firebase 的旧网站**使用「备份全部房间」或「备份 JSON」；之后启用 Firebase，在新版房间大厅使用「导入房间备份」，会作为**新的云端房间**导入。不要在迁移完成前删除旧资料。
+
+## 安全和使用边界
+
+- 本版本专门给**互相信任的牌友**。任何打开网站、成功匿名认证的人都能看到、修改和**删除所有云端房间**；没有房间密码、管理员角色或误操作追责机制。房间网址不等于访问权限。不要保存敏感个人资料。
+- 真正需要防陌生人更改时，后续应增加房间密码/访问控制和服务端校验；仅隐藏按钮不能防止未经授权的修改。
+- 房间资料采用单个 Firestore 文档保存，应用设有 **1,300 笔记录 / 700KB** 的保护上限。牌局很多时，定期导出 JSON 后另建新房间。Firebase 文档本身另有大小限制。
+- GitHub Pages 不会保存数据库；要持久同步必须保持 Firebase 项目启用。免费额度与产品政策以官方 Firebase 文档为准。
+- 云端离线时，页面显示离线并暂停新记账，以免两部手机出现各算各的资料。
+- 目前已完成本地浏览器测试及模拟云端适配器测试；**尚未在真实 Firebase 项目做跨手机端到端测试**，需要你配置完后按上述步骤验证。
+
+## 文件说明
+
+- `index.html`：视觉、操作页、记分表。
+- `app.js`：计费、统计、换人、历史撤销、房间 UI。
+- `cloud-sync.js`：Firebase 匿名认证、云端快照订阅、事务写入。
+- `firebase-config.js`：你自己的 Web App 配置（默认 `null` 使用本机版）。
+- `firestore.rules`：互信模式的 Firestore 基本规则，需要到 Firebase 控制台发布。
+- `.nojekyll`：可在 GitHub Pages 根目录直接部署。
