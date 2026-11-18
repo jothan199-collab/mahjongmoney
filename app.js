@@ -1,4 +1,4 @@
-/* 麻将钱账 v4 — 本机/共享云端双模式。云端使用匿名认证，无需选择玩家身份。
+/* 麻将钱账 v6 — 删除房间密码验证、分享网站与分享房间。
    GitHub Pages 仅发布静态网页。云端多人同步由 Firestore 提供。 */
 (() => {
   'use strict';
@@ -10,7 +10,8 @@
   const cloudMode=!!(window.MAHJONG_FIREBASE_CONFIG?.apiKey && window.MAHJONG_FIREBASE_CONFIG?.projectId);
   const cloud=cloudMode?window.MahjongCloud:null;
   let cloudReady=false,cloudStatus=cloudMode?'云端连接中…':'本机版 · 不同步';
-  const shareUrl=id=>`${location.origin}${location.pathname}${location.search}#room=${encodeURIComponent(id)}`;
+  const siteUrl=()=>`${location.origin}${location.pathname}${location.search}`;
+  const shareUrl=id=>`${siteUrl()}#room=${encodeURIComponent(id)}`;
   const hashRoom=()=>{try{return decodeURIComponent((location.hash.match(/^#room=(.*)$/)||[])[1]||'');}catch{return '';}};
   const setRoomHash=id=>{if(cloudMode){try{history.replaceState(null,'',id?'#room='+encodeURIComponent(id):location.pathname+location.search);}catch(err){console.warn('浏览器不允许更新房间网址',err);}}};
   const PREVIOUS_KEY='mahjong-money-app-v2', OLDEST_KEY='mahjong-money-app-v1';
@@ -56,11 +57,11 @@
     }catch(error){console.warn('读取最新房间资料失败',error);}
     return store;
   }
-  function currentRoom(){return store.rooms.find(r=>r.id===activeRoomId)||null;}
+  function currentRoom(){const r=store.rooms.find(r=>r.id===activeRoomId);return r && Array.isArray(r.seats) && Array.isArray(r.entries) ? r : null;}
   let store=cloudMode?{version:3,rooms:[],lastRoomId:null}:loadStore();
   let activeRoomId=cloudMode?(hashRoom()||sessionStorage.getItem(ACTIVE_KEY)):sessionStorage.getItem(ACTIVE_KEY);
   if(!cloudMode&&!store.rooms.some(r=>r.id===activeRoomId))activeRoomId=store.lastRoomId||store.rooms[0]?.id||null;
-  let game=currentRoom(),busy=false;
+  let game=currentRoom(),busy=false,manageRoomId=null,unlockRoomId=null,deleteRoomId=null,initialRoomPrompted=false;
   const ui={tab:'new',type:'win',method:'zimo',kong:'exposed',kongPay:'all',flies:0,winner:null,discarder:null,actor:null,kongPayer:null};
   const haveSeat=id=>Boolean(game?.seats.includes(id));
   const firstOther=id=>game?.seats.find(x=>x!==id)||null;
@@ -126,7 +127,6 @@
   }
   function settlements(){const balances=getBalances(game),payments=getPayments(game);$('settleBalances').innerHTML=game.players.map(p=>`<div class="settle-line"><span>${esc(p.name)}${game.seats.includes(p.id)?'':' <span class="former">离席</span>'}</span><strong class="${balances[p.id]>0?'positive':balances[p.id]<0?'negative':'zero'}">${signed(balances[p.id]||0)}</strong></div>`).join('');$('settlePayments').innerHTML=payments.length?payments.map(t=>`<div class="settle-line"><span>${whoHtml(t.from)} → ${whoHtml(t.to)}</span><strong>${money(t.cents)}</strong></div>`).join(''):'<div class="empty">目前无须转账。</div>';}
   function settings(){
-    $('gameNameInput').value=game.gameName;
     $('seatSettings').innerHTML=game.seats.map((id,i)=>{
       const playerName=nameOf(game,id),retired=game.players.filter(p=>!game.seats.includes(p.id));
       return `<div class="setting-seat">
@@ -138,23 +138,35 @@
     }).join('');
     $('rateSettings').innerHTML=RATE_INFO.map(([key,label])=>`<label>${label}<input class="field" id="rate-${key}" type="number" step="0.01" min="0" max="99999" inputmode="decimal" value="${Number(game.rates[key]).toFixed(2)}"></label>`).join('');
   }
+  function canManageRoom(room){return !cloudMode || !!cloud?.canManage(room);}
   function roomList(){
+    const term=($('roomSearch')?.value||'').trim().toLocaleLowerCase();
+    const visible=store.rooms.map((room,i)=>({room,i})).filter(x=>!term ||
+      x.room.gameName.toLocaleLowerCase().includes(term) || x.room.id.toLocaleLowerCase().includes(term));
     $('syncStatus').textContent=cloudMode?`${cloudStatus} · ${store.rooms.length} 个房间`:`本机 · ${store.rooms.length} 个房间`;
+    $('adminStatus').textContent=cloudMode?(cloud?.isAdmin()?'🛡 超级管理员':'普通牌友'):'本机模式';
+    $('adminLoginBtn').classList.toggle('hidden',!cloudMode || !!cloud?.isAdmin());
+    $('adminLogoutBtn').classList.toggle('hidden',!cloudMode || !cloud?.isAdmin());
     $('createRoom').disabled=busy||(cloudMode&&!cloudReady);
-    $('roomList').innerHTML=store.rooms.length?store.rooms.map((room,i)=>{
-      const round=getRoundInfo(room),active=room.id===activeRoomId;
-      const hasEntries=activeEntries(room).length;
-      return `<article class="room-card ${active?'current':''}">
-        <div><div class="room-card-header"><span class="room-card-label">房间 ${String(i+1).padStart(2,'0')}</span>${active?'<span class="room-current">正在使用</span>':''}</div>
-        <h3>${esc(room.gameName)}</h3>
-        <p>${round.completed} 局完成 · ${hasEntries} 笔有效记录 · ${room.players.length} 位登记者</p>
+    $('roomPassword').disabled=!cloudMode;
+    $('roomSearchCount').textContent=term?`找到 ${visible.length} / ${store.rooms.length} 个房间`:`共 ${store.rooms.length} 个房间`;
+    $('roomList').innerHTML=visible.length?visible.map(({room,i})=>{
+      const active=room.id===activeRoomId, locked=!!room.locked;
+      const round=locked?null:getRoundInfo(room),hasEntries=locked?0:activeEntries(room).length;
+      const manager=canManageRoom(room);
+      return `<article class="room-card ${active?'current':''} ${locked?'room-faded':''}">
+        <div><div class="room-card-header"><span class="room-card-label">房间 ${String(i+1).padStart(2,'0')}</span>${active?'<span class="room-current">正在选择</span>':''}</div>
+        <h3>${esc(room.gameName)} ${room.hasPassword?'🔒':''}</h3>
+        <p class="${room.hasPassword?'room-locked':''}">${locked?(room.hasPassword?'密码保护 · 输入密码后可查看账目':'同步账目中…'):(`${round.completed} 局完成 · ${hasEntries} 笔有效记录 · ${room.players.length} 位玩家`)}</p>
+        ${manager?'<span class="room-manage-owner">'+(cloudMode?(cloud?.isAdmin()?'管理员管理':'本房间创建者'):'本机可管理')+'</span>':''}
         </div><div class="room-card-controls">
-          <button class="btn ${active?'ghost':'primary'} small" data-open-room="${esc(room.id)}" ${active?'disabled':''}>${active?'当前房间':'进入房间'}</button>
-          <button class="btn small" data-share-room="${esc(room.id)}">分享</button>
-          <button class="btn danger small" data-delete-room="${esc(room.id)}">删除</button>
+          <button class="btn ${active&&!locked?'ghost':'primary'} small" data-open-room="${esc(room.id)}" ${active&&!locked?'disabled':''}>${locked&&room.hasPassword&&!manager?'🔓 输入密码':'进入房间'}</button>
+          <button class="btn small" data-share-room="${esc(room.id)}">↗ 分享房间</button>
+          ${manager?`<button class="btn small" data-manage-room="${esc(room.id)}">管理／改名</button>`:''}
+          ${(manager || (cloudMode && room.hasPassword))?`<button class="btn danger small" data-delete-room="${esc(room.id)}">删除房间</button>`:''}
         </div>
       </article>`;
-    }).join(''):`<div class="room-empty">${cloudMode&&!cloudReady?'正在连接云端房间，请检查网络和 Firebase 设置…':'还没有房间。输入名称，点击「＋ 创建房间」即可开始。'}</div>`;
+    }).join(''):`<div class="room-empty">${term?'没有找到符合条件的房间。':cloudMode&&!cloudReady?'正在连接云端房间，请检查网络和 Firebase 设置…':'还没有房间。输入名称，点击「＋ 创建房间」即可开始。'}</div>`;
   }
   function render(){
     roomList();
@@ -271,11 +283,13 @@
   }
   function backupAll(){
     store=latestStore();
-    download('麻将全部房间备份.json',JSON.stringify(store,null,2),'application/json');
-    notify('全部房间备份已下载');
+    const accessible=store.rooms.filter(r=>Array.isArray(r.entries)&&Array.isArray(r.seats));
+    const snapshot={version:3,rooms:accessible,lastRoomId:activeRoomId};
+    download('麻将全部房间备份.json',JSON.stringify(snapshot,null,2),'application/json');
+    notify('已备份 '+accessible.length+' 个可访问房间'+(accessible.length<store.rooms.length?'；加密且未解锁的房间未包含在内':''));
   }
   function settlementText(){const bal=getBalances(game),info=getRoundInfo(game);return [`🀄 ${game.gameName}`,`已完成 ${info.completed} 局 · 有效记录 ${activeEntries(game).length} 笔`,'','【个人余额】',...game.players.map(p=>`${p.name}${game.seats.includes(p.id)?'':'（离席）'}：${signed(bal[p.id]||0)}`),'','【建议转账】',...(getPayments(game).map(t=>`${nameOf(game,t.from)} → ${nameOf(game,t.to)}：${money(t.cents)}`))].join('\n');}
-  async function copy(text){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(text);else{const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();if(!document.execCommand('copy'))throw Error('无法复制');area.remove();}notify('已复制');}catch(err){notify('复制失败，请手动分享网址');}}
+  async function copy(text){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(text);else{const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();if(!document.execCommand('copy'))throw Error('无法复制');area.remove();}notify('已复制');return true;}catch(err){notify('复制失败，请手动分享网址');return false;}}
   async function importBackup(file){
     if(!file)return;
     try{
@@ -293,7 +307,7 @@
       if(!confirm(`将从备份新增 ${imported.length} 个房间，旧房间不会被覆盖。确定导入？`))return;
       if(cloudMode){
         if(!cloudReady)throw Error('云端未连接');
-        for(const room of imported)await cloud.create(room);
+        for(const room of imported)await cloud.create(room,'');
         for(const room of imported)if(!store.rooms.some(x=>x.id===room.id))store.rooms.push(room);
       }else{
         store=latestStore();store.rooms.push(...imported);
@@ -320,49 +334,160 @@
   async function createRoom(){
     if(busy||(cloudMode&&!cloudReady))return;
     const name=$('roomName').value.trim().slice(0,35);
+    const password=$('roomPassword').value;
+    if(password && !cloudMode){notify('房间密码必须先配置 Firebase 云端');return;}
+    if(password && (password.length<6 || password.length>64)){notify('密码至少 6 位，最多 64 位');return;}
     if(!cloudMode)store=latestStore();
     const index=store.rooms.length+1;
     const fresh=freshGame();fresh.id=uuid();fresh.updatedAt=Date.now();fresh.gameName=name||`麻将房间 ${index}`;
     setBusy(true);
     try{
-      if(cloudMode)await cloud.create(fresh);
+      if(cloudMode)await cloud.create(fresh,password);
+      if(cloudMode)fresh.hasPassword=!!password;
       if(!store.rooms.some(room=>room.id===fresh.id))store.rooms.push(fresh);
       activeRoomId=fresh.id;store.lastRoomId=activeRoomId;
       if(!saveAll())throw Error('无法保存房间');
       setRoomHash(activeRoomId);
-      $('roomName').value='';ui.winner=null;ui.actor=null;game=fresh;
+      $('roomName').value='';$('roomPassword').value='';ui.winner=null;ui.actor=null;game=fresh;
       switchTab('new');render();notify(`已创建「${fresh.gameName}」`);
     }catch(error){notify('创建失败：'+humanErr(error));}
     finally{setBusy(false);}
   }
   function openRoom(id){
     if(!cloudMode)store=latestStore();
-    if(!store.rooms.some(room=>room.id===id)){notify('找不到这个房间');return;}
+    const selected=store.rooms.find(room=>room.id===id);
+    if(!selected){notify('找不到这个房间');return;}
+    if(selected.locked && selected.hasPassword && !canManageRoom(selected)){showUnlockDialog(id);return;}
     activeRoomId=id;store.lastRoomId=id;game=currentRoom();
     ui.winner=null;ui.actor=null;ui.discarder=null;ui.kongPayer=null;
-    saveAll();setRoomHash(id);switchTab('new');render();notify('已进入房间：'+game.gameName);
+    saveAll();setRoomHash(id);switchTab('new');render();notify(game?'已进入房间：'+game.gameName:'已选择房间，正在同步账目…');
   }
   async function deleteRoom(id){
+    if(busy)return;
     if(!cloudMode)store=latestStore();
     const room=store.rooms.find(r=>r.id===id);
     if(!room){notify('房间不存在或已经被删除');return;}
-    if(!confirm(`确定删除「${room.gameName}」吗？该房间的全部 ${room.entries.length} 笔记录都会永久删除，建议先导出 JSON。其他房间不会受影响。`))return;
+    if(canManageRoom(room)){await performDeleteRoom(id,null);return;}
+    if(!cloudMode || !room.hasPassword){notify('公开房间只有创建者或管理员可删除；请先由房主设置房间密码');return;}
+    deleteRoomId=id;
+    $('deleteRoomTitle').textContent='删除「'+room.gameName+'」';
+    $('deleteRoomPassword').value='';
+    $('deleteDialog').showModal();
+  }
+  async function performDeleteRoom(id,password){
+    if(busy)return;
+    const room=store.rooms.find(r=>r.id===id);
+    if(!room){notify('房间不存在或已经被删除');return;}
+    const detail=room.locked?'该房间全部记录':`${room.entries?.length||0} 笔记录`;
+    if(!confirm(`确定永久删除「${room.gameName}」吗？${detail}将被删除，不能撤销。建议先备份。其他房间不会受影响。`))return;
     setBusy(true);
     try{
-      if(cloudMode){if(!cloudReady)throw Error('未连接');await cloud.remove(id);}
+      if(cloudMode){
+        if(!cloudReady)throw Error('云端尚未连接');
+        if(password!==null)await cloud.removeWithPassword(id,password);
+        else await cloud.remove(id);
+      }
       store.rooms=store.rooms.filter(r=>r.id!==id);
       if(activeRoomId===id||!store.rooms.some(r=>r.id===activeRoomId))activeRoomId=store.rooms[0]?.id||null;
       store.lastRoomId=activeRoomId;
       if(!saveAll())throw Error('删除结果保存失败');
       setRoomHash(activeRoomId);
+      if($('deleteDialog').open)$('deleteDialog').close();
+      $('deleteRoomPassword').value='';deleteRoomId=null;
       game=currentRoom();ui.winner=null;ui.actor=null;
-      switchTab('new');render();notify('房间已删除');
-    }catch(error){notify('删除失败：'+humanErr(error));}
+      switchTab('new');render();notify('房间已删除，所有已连接的牌友将同步看到变更');
+    }catch(error){notify('删除失败：'+humanErr(error));console.warn(error);}
     finally{setBusy(false);}
   }
+  async function submitDeleteRoom(e){
+    e.preventDefault();
+    if(busy)return;
+    const password=$('deleteRoomPassword').value;
+    if(!password){notify('请输入房间密码才能删除');return;}
+    if(!deleteRoomId){notify('请重新选择要删除的房间');return;}
+    await performDeleteRoom(deleteRoomId,password);
+  }
+  function showUnlockDialog(id){
+    const room=store.rooms.find(r=>r.id===id);if(!room)return;
+    unlockRoomId=id;
+    $('passwordRoomTitle').textContent='房间：'+room.gameName;
+    $('roomUnlockPassword').value='';
+    if(!$('passwordDialog').open)$('passwordDialog').showModal();
+  }
+  async function submitUnlock(e){
+    e.preventDefault();
+    if(!cloudMode){notify('本机房间没有云端密码');return;}
+    const id=unlockRoomId,pass=$('roomUnlockPassword').value;
+    try{
+      await cloud.join(id,pass);
+      $('passwordDialog').close();
+      openRoom(id);
+      notify('密码验证成功');
+    }catch(err){notify('无法进入：'+humanErr(err));}
+  }
+  function showManageDialog(id){
+    const room=store.rooms.find(r=>r.id===id);if(!room)return;
+    if(!canManageRoom(room)){notify('只有房间创建者或管理员可以管理');return;}
+    manageRoomId=id;
+    $('manageRoomTitle').textContent=room.hasPassword?'🔒 目前有密码保护':'目前是公开房间';
+    $('manageNewName').value=room.gameName;
+    $('manageNewPassword').value='';
+    $('manageRemovePassword').checked=false;
+    $('manageNewPassword').disabled=false;
+    $('manageNewPassword').disabled=!cloudMode;
+    $('manageRemovePassword').disabled=!cloudMode || !room.hasPassword;
+    if(!$('manageDialog').open)$('manageDialog').showModal();
+  }
+  async function submitManage(e){
+    e.preventDefault();
+    const id=manageRoomId,room=store.rooms.find(r=>r.id===id);
+    if(!room||!canManageRoom(room)){notify('没有房间管理权限');return;}
+    const name=$('manageNewName').value.trim(),pass=$('manageNewPassword').value,remove=$('manageRemovePassword').checked;
+    if(!name||name.length>35){notify('房间名称须为 1–35 字');return;}
+    if(pass && (pass.length<6||pass.length>64)){notify('新密码须为 6–64 字符');return;}
+    setBusy(true);
+    try{
+      if(cloudMode){
+        if(remove || pass)await cloud.setPassword(id,remove?'':pass);
+        if(name!==room.gameName)await cloud.rename(id,name);
+      }else if(name!==room.gameName){
+        store=latestStore();
+        const target=store.rooms.find(r=>r.id===id);
+        if(!target)throw Error('房间已不存在');
+        target.gameName=name;target.updatedAt=Date.now();saveAll();
+      }
+      $('manageDialog').close();render();notify('房间管理设置已保存');
+    }catch(err){notify('管理失败：'+humanErr(err));console.warn(err);}
+    finally{setBusy(false);}
+  }
+  async function submitAdmin(e){
+    e.preventDefault();
+    if(!cloudMode){notify('请先配置 Firebase 云端');return;}
+    try{
+      await cloud.loginAdmin($('adminEmail').value,$('adminPassword').value);
+      $('adminPassword').value='';$('adminDialog').close();notify('管理员登录成功');
+    }catch(err){notify('登录失败：'+humanErr(err));}
+  }
+  async function shareLink(title,message,url){
+    if(!/^https:\/\//i.test(url)){notify('请先部署到 GitHub Pages，才能分享正式网址');return;}
+    if(typeof navigator.share==='function'){
+      try{await navigator.share({title,text:message,url});return;}
+      catch(err){if(err?.name==='AbortError')return;}
+    }
+    if(await copy(url))notify('链接已复制，可以贴到 WhatsApp 群组');
+  }
+  async function shareWebsite(){
+    await shareLink('🀄 麻将钱账','打开麻将算钱网站，选择房间一起记账',siteUrl());
+  }
   async function shareRoom(id){
-    if(!cloudMode){notify('当前是本机版；分享网址不会同步账目，请先设置云端');return;}
-    await copy(shareUrl(id));
+    const room=store.rooms.find(r=>r.id===id);
+    if(!room){notify('房间不存在');return;}
+    if(!cloudMode){notify('本机模式不能跨手机共享房间，请先配置 Firebase');return;}
+    await shareLink('🀄 '+room.gameName,'来「'+room.gameName+'」麻将房间一起记账'+(room.hasPassword?'（进入时需输入房间密码）':''),shareUrl(id));
+  }
+  async function shareCurrentRoom(){
+    if(activeRoomId)await shareRoom(activeRoomId);
+    else notify('请先进入或建立房间');
   }
   function onRemoteRooms(rooms,status){
     cloudReady=status==='online';cloudStatus=cloudReady?'云端已同步':status==='offline'?'云端离线 · 暂停写入':status==='loading'?'云端连接中…':`连接错误：${status}`;
@@ -374,6 +499,11 @@
     store.lastRoomId=activeRoomId;
     if(activeRoomId!==oldId){ui.winner=null;ui.actor=null;ui.discarder=null;ui.kongPayer=null;}
     game=currentRoom();saveAll();render();
+    if(target&&!initialRoomPrompted && store.rooms.some(r=>r.id===target)){
+      initialRoomPrompted=true;
+      const requested=store.rooms.find(r=>r.id===target);
+      if(requested.locked && requested.hasPassword && !canManageRoom(requested))showUnlockDialog(target);
+    }
   }
   function wire(){
     document.addEventListener('click',e=>{
@@ -381,6 +511,8 @@
       const open=e.target.closest('[data-open-room]');if(open){openRoom(open.dataset.openRoom);return;}
       const del=e.target.closest('[data-delete-room]');if(del){deleteRoom(del.dataset.deleteRoom);return;}
       const share=e.target.closest('[data-share-room]');if(share){shareRoom(share.dataset.shareRoom);return;}
+      const manage=e.target.closest('[data-manage-room]');if(manage){showManageDialog(manage.dataset.manageRoom);return;}
+      const close=e.target.closest('[data-close-dialog]');if(close){$(close.dataset.closeDialog).close();return;}
       const quick=e.target.closest('[data-quick-winner]');if(quick){ui.type='win';ui.winner=quick.dataset.quickWinner;ui.discarder=firstOther(ui.winner);switchTab('new');updateChoices();$('recordBtn').scrollIntoView({behavior:'smooth',block:'center'});notify('已选择赢家，确认胡牌方式后记账');return;}
       const rename=e.target.closest('[data-rename]');if(rename){renameSeat(Number(rename.dataset.rename));return;}
       const swap=e.target.closest('[data-swap]');if(swap){changeSeat(Number(swap.dataset.swap));return;}
@@ -403,14 +535,24 @@
     $('backupAllLobby').addEventListener('click',backupAll);
     $('copySettlement').addEventListener('click',()=>copy(settlementText()));
     $('saveSettings').addEventListener('click',()=>{
-      const title=$('gameNameInput').value.trim().slice(0,35)||'麻将牌局',rates={};
+      const rates={};
       for(const [key] of RATE_INFO){const val=$('rate-'+key).value.trim();if(!/^\d+(\.\d{1,2})?$/.test(val)||!Number.isInteger(cents(val))){notify('金额请输入 0 到 99999，最多两位小数');return;}rates[key]=Number(val);}
-      modifyMeta(()=>({gameName:title,rates}));
+      modifyMeta(()=>({rates}));
     });
     $('importFile').addEventListener('change',e=>importBackup(e.target.files[0]));
     $('lobbyImportFile').addEventListener('change',e=>importBackup(e.target.files[0]));
     $('resetBtn').addEventListener('click',reset);
     $('createRoom').addEventListener('click',createRoom);
+    $('shareWebsite').addEventListener('click',shareWebsite);
+    $('shareCurrentRoom').addEventListener('click',shareCurrentRoom);
+    $('roomSearch').addEventListener('input',roomList);
+    $('passwordForm').addEventListener('submit',submitUnlock);
+    $('deleteRoomForm').addEventListener('submit',submitDeleteRoom);
+    $('manageForm').addEventListener('submit',submitManage);
+    $('adminForm').addEventListener('submit',submitAdmin);
+    $('adminLoginBtn').addEventListener('click',()=>{if(!cloudMode){notify('管理员登录必须先配置 Firebase');return;}$('adminDialog').showModal();});
+    $('adminLogoutBtn').addEventListener('click',async()=>{try{await cloud.logoutAdmin();onRemoteRooms([],'loading');notify('已退出管理员账号');}catch(err){notify('退出失败：'+humanErr(err));}});
+    $('manageRemovePassword').addEventListener('change',()=>{$('manageNewPassword').disabled=$('manageRemovePassword').checked;});
     $('roomName').addEventListener('keydown',e=>{if(e.key==='Enter')createRoom();});
     window.addEventListener('storage',e=>{
       if(cloudMode||e.key!==STORE_KEY)return;
@@ -425,9 +567,9 @@
   wire();render();
   if(cloudMode){
     if(!cloud){cloudStatus='找不到云端连接模块，请检查 cloud-sync.js';roomList();}
-    else cloud.init(onRemoteRooms,(status)=>onRemoteRooms(store.rooms,status)).catch(err=>{
+    else cloud.init(onRemoteRooms,()=>{roomList();}).catch(err=>{
       cloudReady=false;cloudStatus='连接错误：'+humanErr(err);render();console.error('Firebase init',err);
     });
   }
-  window.__mahjongVerify={freshGame,makeTransfers,getStats,getBalances,getRoundInfo,getPayments,migrate,getGame:()=>game,getStore:()=>store,createRoom,openRoom,deleteRoom,scoreRanks,record,changeSeat,renameSeat,toggleEntry};
+  window.__mahjongVerify={freshGame,makeTransfers,getStats,getBalances,getRoundInfo,getPayments,migrate,getGame:()=>game,getStore:()=>store,createRoom,openRoom,deleteRoom,performDeleteRoom,shareRoom,shareWebsite,siteUrl,shareUrl,scoreRanks,record,changeSeat,renameSeat,toggleEntry,roomList,showManageDialog,showUnlockDialog};
 })();

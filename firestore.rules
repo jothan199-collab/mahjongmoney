@@ -1,37 +1,113 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAnonymous() {
-      return request.auth != null &&
-        request.auth.token.firebase.sign_in_provider == 'anonymous';
+    // ★ 部署前务必用 Firebase Authentication > Users 中的管理员 UID 替换！
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && request.auth.uid == '填写管理员UID'; }
+    function idx(id) {
+      return get(/databases/$(database)/documents/mahjong_room_index_v5/$(id)).data;
     }
-    function validRoom(roomId) {
-      return request.resource.data.keys().hasOnly([
-        'id','version','gameName','createdAt','updatedAt',
-        'players','seats','rates','entries','nextSeq'
-      ]) &&
-      request.resource.data.id == roomId &&
-      request.resource.data.version == 2 &&
-      request.resource.data.gameName is string &&
-      request.resource.data.gameName.size() <= 35 &&
-      request.resource.data.players is list &&
-      request.resource.data.players.size() >= 4 &&
-      request.resource.data.players.size() <= 100 &&
-      request.resource.data.seats is list &&
-      request.resource.data.seats.size() == 4 &&
-      request.resource.data.rates is map &&
-      request.resource.data.entries is list &&
-      request.resource.data.entries.size() <= 1300 &&
-      request.resource.data.nextSeq is int &&
-      request.resource.data.createdAt is int &&
-      request.resource.data.updatedAt is int;
+    function owner(id) {
+      return signedIn() && idx(id).ownerUid == request.auth.uid;
     }
-    match /mahjong_rooms_v4/{roomId} {
-      // 无角色和密码的互信牌友模式：访问网站的匿名用户均能查看、编辑和删除房间。
-      // 并非私人加密房间；不要存储敏感信息。
-      allow read: if isAnonymous();
-      allow create, update: if isAnonymous() && validRoom(roomId);
-      allow delete: if isAnonymous();
+    function manager(id) { return admin() || owner(id); }
+    function member(id) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/mahjong_room_members_v5/$(id)/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/mahjong_room_members_v5/$(id)/users/$(request.auth.uid)).data.accessVersion == idx(id).accessVersion;
+    }
+    function canEnter(id) {
+      return signedIn() && (manager(id) || idx(id).hasPassword == false || member(id));
+    }
+    // 非创建者／非管理员删除加密房间时，必须在同一原子批次中提交密码校验值。
+    // createdAt == request.time 使旧凭证不可在新的删除请求中重放。
+    function passwordAuthorizedDelete(id) {
+      return signedIn() && idx(id).hasPassword == true &&
+        getAfter(/databases/$(database)/documents/mahjong_room_delete_authorizations_v5/$(id)/users/$(request.auth.uid)).data.uid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/mahjong_room_delete_authorizations_v5/$(id)/users/$(request.auth.uid)).data.proof ==
+          get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(id)).data.verifier &&
+        getAfter(/databases/$(database)/documents/mahjong_room_delete_authorizations_v5/$(id)/users/$(request.auth.uid)).data.createdAt == request.time;
+    }
+    function validDirectory(d) {
+      return d.keys().hasOnly(['name','ownerUid','hasPassword','salt','accessVersion','createdAt','updatedAt']) &&
+        d.keys().hasAll(['name','ownerUid','hasPassword','salt','accessVersion','createdAt','updatedAt']) &&
+        d.name is string && d.name.size() > 0 && d.name.size() <= 35 &&
+        d.ownerUid is string && d.hasPassword is bool &&
+        d.salt is string && d.salt.size() <= 32 &&
+        d.accessVersion is int && d.accessVersion > 0 &&
+        d.createdAt is int && d.updatedAt is int;
+    }
+    function validRoom(id,d) {
+      return d.keys().hasOnly(['id','ownerUid','version','gameName','createdAt','updatedAt',
+        'players','seats','rates','entries','nextSeq']) &&
+        d.keys().hasAll(['id','ownerUid','version','gameName','createdAt','updatedAt',
+        'players','seats','rates','entries','nextSeq']) &&
+        d.id == id && d.version == 2 && d.ownerUid is string &&
+        d.gameName is string && d.gameName.size() > 0 && d.gameName.size() <= 35 &&
+        d.players is list && d.players.size() >= 4 && d.players.size() <= 100 &&
+        d.seats is list && d.seats.size() == 4 &&
+        d.rates is map && d.entries is list && d.entries.size() <= 1300 &&
+        d.nextSeq is int && d.createdAt is int && d.updatedAt is int;
+    }
+    match /mahjong_room_index_v5/{roomId} {
+      // 只有房间名称、是否加密等目录资料公开；牌局与记账数据不公开。
+      allow read: if signedIn();
+      allow create: if signedIn() && validDirectory(request.resource.data) &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.accessVersion == 1;
+      allow update: if manager(roomId) && validDirectory(request.resource.data) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.accessVersion >= resource.data.accessVersion;
+      allow delete: if manager(roomId) || passwordAuthorizedDelete(roomId);
+    }
+    match /mahjong_room_secrets_v5/{roomId} {
+      // 密码验证值只交给数据库规则检查，普通牌友不能读取。
+      allow read: if manager(roomId);
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['ownerUid','verifier','updatedAt']) &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/mahjong_room_index_v5/$(roomId)).data.ownerUid == request.auth.uid;
+      allow update: if manager(roomId) &&
+        request.resource.data.keys().hasOnly(['ownerUid','verifier','updatedAt']) &&
+        request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if manager(roomId) || passwordAuthorizedDelete(roomId);
+    }
+    match /mahjong_room_members_v5/{roomId}/users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || admin());
+      allow create, update: if signedIn() && request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly(['uid','proof','accessVersion','createdAt']) &&
+        request.resource.data.keys().hasAll(['uid','proof','accessVersion','createdAt']) &&
+        request.resource.data.uid == userId &&
+        idx(roomId).hasPassword == true &&
+        request.resource.data.accessVersion == idx(roomId).accessVersion &&
+        request.resource.data.proof == get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(roomId)).data.verifier;
+      allow delete: if signedIn() && (request.auth.uid == userId || admin());
+    }
+    match /mahjong_room_delete_authorizations_v5/{roomId}/users/{userId} {
+      // 不提供普通用户读取凭证的权限；只准在正确密码校验后创建。
+      allow read, update, delete: if false;
+      allow create: if signedIn() && request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly(['uid','proof','createdAt']) &&
+        request.resource.data.keys().hasAll(['uid','proof','createdAt']) &&
+        request.resource.data.uid == userId &&
+        request.resource.data.createdAt == request.time &&
+        idx(roomId).hasPassword == true &&
+        request.resource.data.proof == get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(roomId)).data.verifier;
+    }
+    match /mahjong_rooms_v5/{roomId} {
+      allow get: if canEnter(roomId);
+      allow list: if false;
+      allow create: if signedIn() && validRoom(roomId,request.resource.data) &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/mahjong_room_index_v5/$(roomId)).data.ownerUid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/mahjong_room_index_v5/$(roomId)).data.name == request.resource.data.gameName;
+      allow update: if canEnter(roomId) && validRoom(roomId,request.resource.data) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (request.resource.data.gameName == resource.data.gameName || manager(roomId)) &&
+        getAfter(/databases/$(database)/documents/mahjong_room_index_v5/$(roomId)).data.name == request.resource.data.gameName;
+      allow delete: if manager(roomId) || passwordAuthorizedDelete(roomId);
     }
   }
 }

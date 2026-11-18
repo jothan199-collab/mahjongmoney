@@ -1,22 +1,20 @@
 /*
-  默认是本机模式：打开网页就能记账，但不同手机不会自动同步。
-
-  开启云端同步：
-  1. 在 https://console.firebase.google.com/ 创建 Spark 免费项目；
-  2. 添加 Web App，开启 Authentication > Anonymous；
-  3. 创建 Cloud Firestore (Standard)，在 Rules 粘贴同目录的 firestore.rules；
-  4. Project settings > Your apps > Config 复制各项值，填入下面的对象。
-  5. 上传这个文件到 GitHub，替换旧版。四部手机使用同一个网址。
-
-  Firebase 的 Web apiKey 是公开的项目配置项，不是管理员密钥；
-  但绝对不要上传 service account/private key 或任何管理员令牌。
+  默认为本机模式；不开启云端则不能跨手机同步、不能使用云端管理员登录或真正的房间密码。
+  如果要开启：
+  1. Firebase Console > Project settings > Your apps > Web App config；
+  2. 开启 Authentication 的 Anonymous 和 Email/Password；
+  3. 在 Authentication > Users 建立管理员邮箱账号，复制它的 UID；
+  4. 把 UID 同时填到本文件的 adminUid 和 firestore.rules 的「填写管理员UID」；
+  5. 在 Firestore > Rules 发布 firestore.rules。
+  adminUid 是公开的用户识别号，不是密码；管理员密码绝对不要写到这个文件。
 */
 window.MAHJONG_FIREBASE_CONFIG = null;
-/* 改成以下形式（删除上面那一行）：
+/* 填入实际 Firebase 配置时，删除上面一行，并取消下面注释：
 window.MAHJONG_FIREBASE_CONFIG = {
   apiKey: '你的 apiKey',
   authDomain: '你的 authDomain',
   projectId: '你的 projectId',
-  appId: '你的 appId'
+  appId: '你的 appId',
+  adminUid: '填写管理员UID'
 };
 */
