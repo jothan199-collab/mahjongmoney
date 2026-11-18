@@ -41,11 +41,14 @@
     if (new TextEncoder().encode(JSON.stringify(game)).length>700000)
       throw Error('房间容量接近限制，请导出备份后创建新房间');
   }
-  async function proof(password,salt) {
+  async function proof(password,salt,purpose='join') {
     if (!crypto?.subtle) throw Error('密码验证要求 HTTPS 安全连接');
     const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password.normalize('NFKC')),
       'PBKDF2',false,['deriveBits']);
-    const saltBytes=Uint8Array.from(salt.match(/.{2}/g).map(v=>parseInt(v,16)));
+    const roomSalt=Uint8Array.from(salt.match(/.{2}/g).map(v=>parseInt(v,16)));
+    const saltBytes=purpose==='delete'
+      ? Uint8Array.from([...new TextEncoder().encode('mahjong-room-delete:'), ...roomSalt])
+      : roomSalt;
     const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',iterations:150000,salt:saltBytes},key,256);
     return Array.from(new Uint8Array(bits)).map(x=>x.toString(16).padStart(2,'0')).join('');
   }
@@ -122,11 +125,12 @@
     if(hasPassword && (password.length<6 || password.length>64))throw Error('房间密码须为 6–64 个字符');
     const passSalt=hasPassword?salt():'';
     const hash=hasPassword?await proof(password,passSalt):'';
+    const deletionHash=hasPassword?await proof(password,passSalt,'delete'):'';
     const now=Date.now();
     const directoryData={name:game.gameName,ownerUid:uid(),hasPassword,salt:passSalt,accessVersion:1,createdAt:now,updatedAt:now};
     const batch=db.batch();
     batch.set(indexRef(game.id),directoryData);
-    batch.set(secretRef(game.id),{ownerUid:uid(),verifier:hash,updatedAt:now});
+    batch.set(secretRef(game.id),{ownerUid:uid(),verifier:hash,deleteVerifier:deletionHash,updatedAt:now});
     batch.set(gameRef(game.id),clean);
     await batch.commit();
     return clean;
@@ -157,13 +161,14 @@
     if(newPassword&&(newPassword.length<6||newPassword.length>64))throw Error('房间密码须为 6–64 个字符');
     const hasPassword=!!newPassword,passSalt=hasPassword?salt():'';
     const hash=hasPassword?await proof(newPassword,passSalt):'';
+    const deletionHash=hasPassword?await proof(newPassword,passSalt,'delete'):'';
     await db.runTransaction(async tx=>{
       const idx=indexRef(id),secret=secretRef(id);
       const meta=await tx.get(idx);
       if(!meta.exists)throw Error('房间不存在');
       const version=(meta.data().accessVersion||1)+1;
       tx.update(idx,{hasPassword,salt:passSalt,accessVersion:version,updatedAt:Date.now()});
-      tx.set(secret,{ownerUid:meta.data().ownerUid,verifier:hash,updatedAt:Date.now()});
+      tx.set(secret,{ownerUid:meta.data().ownerUid,verifier:hash,deleteVerifier:deletionHash,updatedAt:Date.now()});
     });
     if(!hasPassword)joined.delete(id);
     saveJoined();
@@ -196,7 +201,7 @@
     if(!metadata.exists)throw Error('房间已不存在');
     const m=metadata.data();
     if(!m.hasPassword)throw Error('此房间没有密码，请联系创建者或管理员删除');
-    const hash=await proof(password,m.salt);
+    const hash=await proof(password,m.salt,'delete');
     const b=db.batch();
     b.set(deleteAuthRef(id,uid()),{
       uid:uid(),proof:hash,createdAt:firebase.firestore.FieldValue.serverTimestamp()

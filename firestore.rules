@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // ★ 部署前务必用 Firebase Authentication > Users 中的管理员 UID 替换！
     function signedIn() { return request.auth != null; }
-    function admin() { return signedIn() && request.auth.uid == '填写管理员UID'; }
+    function admin() { return signedIn() && request.auth.uid == 'BA0MA7FVSIdrFD4iKLu9L7FUhHK2'; }
     function idx(id) {
       return get(/databases/$(database)/documents/mahjong_room_index_v5/$(id)).data;
     }
@@ -25,7 +25,7 @@ service cloud.firestore {
       return signedIn() && idx(id).hasPassword == true &&
         getAfter(/databases/$(database)/documents/mahjong_room_delete_authorizations_v5/$(id)/users/$(request.auth.uid)).data.uid == request.auth.uid &&
         getAfter(/databases/$(database)/documents/mahjong_room_delete_authorizations_v5/$(id)/users/$(request.auth.uid)).data.proof ==
-          get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(id)).data.verifier &&
+          get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(id)).data.deleteVerifier &&
         getAfter(/databases/$(database)/documents/mahjong_room_delete_authorizations_v5/$(id)/users/$(request.auth.uid)).data.createdAt == request.time;
     }
     function validDirectory(d) {
@@ -64,16 +64,16 @@ service cloud.firestore {
     match /mahjong_room_secrets_v5/{roomId} {
       // 密码验证值只交给数据库规则检查，普通牌友不能读取。
       allow read: if manager(roomId);
-      allow create: if signedIn() && request.resource.data.keys().hasOnly(['ownerUid','verifier','updatedAt']) &&
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['ownerUid','verifier','deleteVerifier','updatedAt']) &&
         request.resource.data.ownerUid == request.auth.uid &&
         getAfter(/databases/$(database)/documents/mahjong_room_index_v5/$(roomId)).data.ownerUid == request.auth.uid;
       allow update: if manager(roomId) &&
-        request.resource.data.keys().hasOnly(['ownerUid','verifier','updatedAt']) &&
+        request.resource.data.keys().hasOnly(['ownerUid','verifier','deleteVerifier','updatedAt']) &&
         request.resource.data.ownerUid == resource.data.ownerUid;
       allow delete: if manager(roomId) || passwordAuthorizedDelete(roomId);
     }
     match /mahjong_room_members_v5/{roomId}/users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || admin());
+      allow read: if admin();
       allow create, update: if signedIn() && request.auth.uid == userId &&
         request.resource.data.keys().hasOnly(['uid','proof','accessVersion','createdAt']) &&
         request.resource.data.keys().hasAll(['uid','proof','accessVersion','createdAt']) &&
@@ -92,7 +92,10 @@ service cloud.firestore {
         request.resource.data.uid == userId &&
         request.resource.data.createdAt == request.time &&
         idx(roomId).hasPassword == true &&
-        request.resource.data.proof == get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(roomId)).data.verifier;
+        request.resource.data.proof == get(/databases/$(database)/documents/mahjong_room_secrets_v5/$(roomId)).data.deleteVerifier &&
+        !existsAfter(/databases/$(database)/documents/mahjong_room_index_v5/$(roomId)) &&
+        !existsAfter(/databases/$(database)/documents/mahjong_room_secrets_v5/$(roomId)) &&
+        !existsAfter(/databases/$(database)/documents/mahjong_rooms_v5/$(roomId));
     }
     match /mahjong_rooms_v5/{roomId} {
       allow get: if canEnter(roomId);
