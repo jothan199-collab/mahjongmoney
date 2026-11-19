@@ -45,42 +45,40 @@ function showDemo(rule){
  $('fanDemoLegal').textContent=groups.length?`教学${previewRule?.conceptOnly?'概念牌例':'牌谱'} · ${groups.reduce((sum,g)=>sum+g.length,0)} 张 · 动画发牌${previewRule?.conceptOnly?' · 过程／条件须另外确认':''}${groups.reduce((sum,g)=>sum+g.length,0)===14?'（14张牌）':''}`:'此番需要特殊过程／牌型，规则定义如下，须人工确认。';
  const flat=groups.flat();let index=0;
  $('fanDemoTiles').innerHTML=flat.length?groups.map(g=>`<div class="fan-set">${g.map(x=>tile(x,{animated:true,index:index++,last:flat.length===14&&index===flat.length})).join('')}</div>`).join(''):'<div class="fan-demo-message">此类番种涉及和牌过程、暗明牌状态或复杂组合；请参照规则定义，并使用下方「14张手牌试算」操作。</div>';
- $('fanAddRule').disabled=!previewRule;
  const more=$('fanMoreRule');if(more){more.classList.toggle('hidden',maxQty(previewRule?.id)===1);more.textContent='＋ 次数（目前 '+(multiplicities[previewRule?.id]||0)+'/'+maxQty(previewRule?.id)+'）';}
  $('fanLoadDemo').disabled=!groups.length || flat.length!==14;
- $('fanAddRule').textContent=selected.has(previewRule?.id)?'✓ 已选，点击移除':'＋ 添加此番';
 }
 function renderRules(){
  const term=search.toLocaleLowerCase(),rules=getRules().filter(r=>r.name.toLowerCase().includes(term)||r.description.toLowerCase().includes(term)||String(r.score)===term||String(r.index||'')===term);
  $('fanRuleCount').textContent=`显示 ${rules.length}/${getRules().length} 种番型`;
- $('fanRuleList').innerHTML=rules.map(r=>`<button type="button" class="fan-rule ${previewRule?.id===r.id?'selected':''}" data-fan-show="${r.id}"><span class="fan-points">${r.score}番</span><span class="fan-rule-text"><b>${r.index?'<span class="fan-index">#'+r.index+'</span> ':''}${h(r.name)}</b><small>${h(r.description)}</small>${r.house?'<small class="fan-manual">自订桌规</small>':''}</span></button>`).join('')||'<div class="empty">没有找到相符的番型。</div>';
+ $('fanRuleList').innerHTML=rules.map(r=>`<button type="button" class="fan-rule ${selected.has(r.id)?'selected':''}" aria-pressed="${selected.has(r.id)}" data-fan-show="${r.id}"><span class="fan-points">${r.score}番</span><span class="fan-rule-text"><b>${selected.has(r.id)?'✓ ':''}${r.index?'<span class="fan-index">#'+r.index+'</span> ':''}${h(r.name)}</b><small>${h(r.description)}</small>${r.house?'<small class="fan-manual">自订桌规</small>':''}</span></button>`).join('')||'<div class="empty">没有找到相符的番型。</div>';
 }
 const SPECIAL_HK=['big4','thirteen','fourkong','heaven','earth','human','allhonor','pureterm','nine'];
-function normalizeSelection(){
+function normalizeSelection(selected){
  const ids=Array.from(selected);
  if(viewMode==='hk'){
   for(const r of ids){if(r==='full')selected.delete('half');if(r==='half'&&selected.has('full'))selected.delete('half');}
   const exclusives=[['big4','small4','seatwind','roundwind','pungs','half'],['big3','small3','dragon'],['small3','dragon'],['termhon','pungs'],['kongflower','self']];
   for(const [top,...lower] of exclusives)if(selected.has(top))lower.forEach(x=>selected.delete(x));
   const limits=Array.from(selected).filter(id=>SPECIAL_HK.includes(id));
-  if(limits.length){const max=limits.map(id=>byId(id)).filter(Boolean).sort((a,b)=>b.score-a.score)[0];selected=new Set([max.id]);}
+  if(limits.length){const max=limits.map(id=>byId(id)).filter(Boolean).sort((a,b)=>b.score-a.score)[0];selected.clear();selected.add(max.id);}
  }
 }
-function calcSelected(){
- normalizeSelection();
- const chosen=[...selected].map(byId).filter(Boolean);
- const raw=chosen.reduce((n,r)=>n+r.score*(multiplicities[r.id]||1),0);
+function calcSelected(ids=selected, quantities=multiplicities){
+ normalizeSelection(ids);
+ const chosen=[...ids].map(byId).filter(Boolean);
+ const raw=chosen.reduce((n,r)=>n+r.score*(quantities[r.id]||1),0);
  return {mode:'hk',points:Math.min(raw,cfg().hkCap),rawPoints:raw,extra:0,
-  selected:chosen.map(r=>({id:r.id,name:r.name,points:r.score*(multiplicities[r.id]||1),qty:multiplicities[r.id]||1})),
+  selected:chosen.map(r=>({id:r.id,name:r.name,points:r.score*(quantities[r.id]||1),qty:quantities[r.id]||1})),
   valid:chosen.length>0 && raw>=cfg().hkMin};
 }
 function renderSummary(){
  const sum=calcSelected();
+ renderRules();
  $('fanScore').textContent=`${sum.points} 番`;
  $('fanPointsStatus').textContent=!selected.size?'尚未选择番型':sum.valid?'达到当前起糊设定（请核对牌形）':'低于设定起糊番数';
- $('fanSelectedText').innerHTML=sum.selected.length?sum.selected.map(r=>`<button type="button" class="fan-chip" data-fan-drop="${r.id}" title="移除">${h(r.name)} ${r.qty>1?'×'+r.qty+' ':''}+${r.points} ×</button>`).join(''):'<span class="muted">点选番型并添加，或输入14张牌尝试识别。</span>';
+ $('fanSelectedText').innerHTML=sum.selected.length?sum.selected.map(r=>`<button type="button" class="fan-chip" data-fan-drop="${r.id}" title="移除">${h(r.name)} ${r.qty>1?'×'+r.qty+' ':''}+${r.points} ×</button>`).join(''):'<span class="muted">直接点击本局符合的番型，可多选。</span>';
  $('fanApply').disabled=!sum.valid;
- $('fanAddRule').textContent=previewRule&&selected.has(previewRule.id)?'✓ 已选，点击移除':'＋ 添加此番';
  $('fanStudioWarning').textContent='香港麻将番数和部分特殊胡法依牌桌而异；此工具仅自动识别常见牌型，花牌、吃碰与和牌方式须人工核对。';
 }
 function changeMode(newMode){
@@ -167,6 +165,7 @@ function setHand(codes){
  hand=codes.slice(0,18);renderHand();
 }
 function renderHand(){
+ $('fanAnalysisResult').textContent='';
  $('fanHandCount').textContent=hand.length+' / 14 张';
  $('fanHand').innerHTML=hand.map((code,i)=>tile(code,{clickable:true,index:i})).join('')+Array.from({length:Math.max(0,14-hand.length)},()=>'<span class="fan-empty-slot">＋</span>').join('');
  $('fanHandMessage').textContent=hand.length===14?'点「自动识别常见番型」，也可点击某张手牌将其移除。':'从下面牌库点击选牌，达到14张后即可尝试分析；手牌可直接点击删除。';
@@ -175,10 +174,11 @@ function runAnalyze(){
  const result=autoAnalyze(hand,{mode:'hk',selfDraw:$('fanSelfDraw').checked,closed:$('fanClosed').checked,seatWind:$('fanSeatWind').value,roundWind:$('fanRoundWind').value,allowHouse:$('fanHouse').checked});
  lastAnalysis=result;
  if(result.error){$('fanAnalysisResult').innerHTML=`<div class="fan-standby">⚠️ ${h(result.error)}</div>`;return;}
- selected=new Set(result.patterns);multiplicities={};
- if(selected.has('dragon'))multiplicities.dragon=['R','G','B'].filter(x=>countMap(hand)[x]>=3).length;
- selectionOrigin='auto';normalizeSelection();renderSummary();
- const sum=calcSelected();$('fanAnalysisResult').innerHTML=`<div class="fan-standby"><strong>识别结构：${h(result.kind)}</strong><p>识别到 ${sum.selected.length} 项可能番种，合计 <b>${sum.points+sum.extra} 番</b>。<br>请核对吃碰杠、花牌、门风圈风和是否有不得重复计番的牌型；自动结果仅作参考。</p></div>`;
+ const counts=countMap(hand);
+ const quantities={dragon:['R','G','B'].filter(code=>counts[code]>=3).length};
+ const sum=calcSelected(new Set(result.patterns),quantities);
+ const breakdown=sum.selected.map(rule=>h(rule.name)+' '+rule.points+' 番').join('、') || '未识别到加番番型';
+ $('fanAnalysisResult').innerHTML=`<div class="fan-standby"><strong>${h(result.kind)} · ${sum.points} 番</strong><p>${breakdown}</p><small>仅供参考。花牌、吃碰杠及特殊胡法请另行核对。</small></div>`;
 }
 function refreshApplied(){
  const active=!!(pending && game?.id===pending.roomId);const value=active?`香港麻将 · ${pending.points} 番 · ${pending.selected.map(r=>r.name).join('、')}`:'尚未套用番型；直接记账仍按原本 RM 规则。';
@@ -198,6 +198,7 @@ function setGame(newGame){
  game=newGame;
  const desired=cfg().mode;
  if(!studioReady)return;
+ renderSummary();
  if(viewMode!==desired)changeMode(desired);
  const enabled=!!game&&cfg().enabled;
  $('fanRoomActive').textContent=!game?'请先选择房间':enabled?'当前房间已启用香港麻将算番':'当前房间未启用算番；仍可查看牌型教学。';
@@ -211,16 +212,16 @@ function init(opts={}){
  $('fanRuleset').value=viewMode;
  changeMode(viewMode);renderHand();
  document.addEventListener('click',e=>{
-  const show=e.target.closest('[data-fan-show]');if(show){const rule=byId(show.dataset.fanShow);showDemo(rule);renderRules();return;}
+  const show=e.target.closest('[data-fan-show]');if(show){addSelected(show.dataset.fanShow);return;}
   const drop=e.target.closest('[data-fan-drop]');if(drop){const id=drop.dataset.fanDrop;if((multiplicities[id]||1)>1)multiplicities[id]--;else{selected.delete(id);delete multiplicities[id];}renderSummary();return;}
   const pick=e.target.closest('[data-fan-tile]');if(pick){if(hand.length>=14){$('fanHandMessage').textContent='已满14张，请先移除一张。';return;}if(hand.filter(x=>x===pick.dataset.fanTile).length>=4){$('fanHandMessage').textContent='同种牌最多四张，请选其他牌。';return;}hand.push(pick.dataset.fanTile);renderHand();return;}
   const remove=e.target.closest('[data-fan-hand-remove]');if(remove){hand.splice(Number(remove.dataset.fanHandRemove),1);renderHand();return;}
  });
  $('fanSearch').addEventListener('input',e=>{search=e.target.value;renderRules();});
- $('fanAddRule').addEventListener('click',()=>previewRule&&addSelected(previewRule.id));
  $('fanMoreRule').addEventListener('click',moreRule);
  $('fanPlayDemo').addEventListener('click',()=>showDemo(previewRule));
  $('fanLoadDemo').addEventListener('click',()=>{const arr=sampleGroups(previewRule?.example).flat();if(arr.length!==14)return;setHand(arr);$('fanAnalysisResult').textContent='已载入牌例。可点「自动识别常见番型」。';});
+ for(const id of ['fanSelfDraw','fanClosed','fanHouse','fanSeatWind','fanRoundWind']) $(id).addEventListener('change',()=>{$('fanAnalysisResult').textContent='';});
  $('fanAnalyze').addEventListener('click',runAnalyze);
  $('fanClearHand').addEventListener('click',()=>{setHand([]);lastAnalysis=null;$('fanAnalysisResult').textContent='';});
  $('fanClearSelected').addEventListener('click',()=>{selected.clear();multiplicities={};renderSummary();});

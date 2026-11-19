@@ -239,7 +239,7 @@
   }
   async function record(){
     if(busy||!game)return;
-    const form=getForm(),initialSeats=game.seats.slice(),initialRates=JSON.stringify(game.rates);
+    const form=getForm(),initialSeats=game.seats.slice(),initialRates={...game.rates};
     if(form.type==='win'&&form.fan?.used){
       const ids=(form.fan.patterns||[]).map(p=>p.id);
       const mustZimo=['self','kongflower','doublekong'];
@@ -254,9 +254,9 @@
       let entry;
       const entryId=uuid();
       await changeCurrent(meta=>{
-        if(JSON.stringify(meta.seats)!==JSON.stringify(initialSeats)||JSON.stringify(meta.rates)!==initialRates)throw Error('座位或规则已更新，请重新确认');
+        if(meta.seats.length!==initialSeats.length || initialSeats.some((id,i)=>id!==meta.seats[i]) || Object.keys(RATES).some(key=>Number(meta.rates[key])!==Number(initialRates[key])))throw Error('座位或规则已更新，请重新确认');
         const transfers=makeTransfers(meta,form);
-        if(!transfers.length)throw Error('本笔金额无效');
+        if(JSON.stringify(transfers)!==JSON.stringify(proposed))throw Error('本笔金额已变更，请核对预览后重新确认');
         entry={id:entryId,seq:meta.nextSeq++,ts:Date.now(),type:form.type,subtype:form.type==='win'?form.method:form.type==='kong'?form.kong:'manual',winner:form.type==='win'?form.winner:null,discarder:form.type==='win'&&form.method==='discard'?form.discarder:null,actor:form.type==='kong'?form.actor:null,flies:form.type==='win'?form.flies:0,note:form.note,fan:form.type==='win'?form.fan:null,transfers,voided:false};
         meta.entries.push(entry);
       });
