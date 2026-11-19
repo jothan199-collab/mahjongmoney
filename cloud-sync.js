@@ -118,7 +118,7 @@
   }
   async function create(game,password='') {
     if(!db || !uid())throw Error('云端未连接');
-    const fields=['id','ownerUid','version','gameName','createdAt','updatedAt','players','seats','rates','entries','nextSeq'];
+    const fields=['id','ownerUid','version','gameName','createdAt','updatedAt','players','seats','rates','entries','nextSeq','fanConfig'];
     const clean=Object.fromEntries(fields.filter(k=>game[k]!==undefined).map(k=>[k,deepClone(game[k])]));
     clean.ownerUid=uid();game.ownerUid=uid(); validate(clean);
     const hasPassword=!!password;

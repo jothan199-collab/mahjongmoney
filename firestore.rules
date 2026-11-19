@@ -39,7 +39,7 @@ service cloud.firestore {
     }
     function validRoom(id,d) {
       return d.keys().hasOnly(['id','ownerUid','version','gameName','createdAt','updatedAt',
-        'players','seats','rates','entries','nextSeq']) &&
+        'players','seats','rates','entries','nextSeq','fanConfig']) &&
         d.keys().hasAll(['id','ownerUid','version','gameName','createdAt','updatedAt',
         'players','seats','rates','entries','nextSeq']) &&
         d.id == id && d.version == 2 && d.ownerUid is string &&

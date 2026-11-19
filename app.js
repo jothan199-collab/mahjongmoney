@@ -1,10 +1,11 @@
-/* 麻将钱账 v6 — 删除房间密码验证、分享网站与分享房间。
+/* 麻将钱账 v7 — 删除房间密码验证、分享网站与分享房间。
    GitHub Pages 仅发布静态网页。云端多人同步由 Firestore 提供。 */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const SEATS = ['东','南','西','北'];
   const RATES = {normal:1,selfDraw:1,discard:2,fly:1,exposed:2,concealed:4};
+  const FAN_DEFAULT={enabled:false,mode:'hk',priceEnabled:false,pricePerUnit:0.1,hkMin:0,hkCap:13};
   const RATE_INFO = [['normal','点炮：其余两家'],['selfDraw','自摸：每家'],['discard','点炮者'],['fly','每粒飞：每家'],['exposed','明杠：每家'],['concealed','暗杠：每家']];
   const STORE_KEY='mahjong-money-multiroom-v3', ACTIVE_KEY='mahjong-active-room-v4';
   const cloudMode=!!(window.MAHJONG_FIREBASE_CONFIG?.apiKey && window.MAHJONG_FIREBASE_CONFIG?.projectId);
@@ -21,14 +22,14 @@
   const fmtTime=ts=>new Date(Number(ts)||Date.now()).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
   const cents=v=>{const n=Number(v);return Number.isFinite(n) && n>=0 && n<=99999 && Math.abs(n*100-Math.round(n*100))<.00001?Math.round(n*100):NaN;};
   const uuid=()=>typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+Math.random().toString(36).slice(2);
-  const freshGame=()=>{const players=SEATS.map((seat,i)=>({id:uuid(),name:seat+'家',createdAt:Date.now()+i}));return {version:2,gameName:'今晚麻将',createdAt:Date.now(),players,seats:players.map(x=>x.id),rates:{...RATES},entries:[],nextSeq:1};};
+  const freshGame=()=>{const players=SEATS.map((seat,i)=>({id:uuid(),name:seat+'家',createdAt:Date.now()+i}));return {version:2,gameName:'今晚麻将',createdAt:Date.now(),players,seats:players.map(x=>x.id),rates:{...RATES},fanConfig:{...FAN_DEFAULT},entries:[],nextSeq:1};};
   const clone=obj=>JSON.parse(JSON.stringify(obj));
   const activeEntries=s=>s.entries.filter(e=>!e.voided).slice().sort((a,b)=>a.seq-b.seq);
   const allEntries=s=>s.entries.slice().sort((a,b)=>a.seq-b.seq);
   const nameOf=(s,id)=>s.players.find(p=>p.id===id)?.name||'未知玩家';
   const getBalances=s=>{const result=Object.fromEntries(s.players.map(p=>[p.id,0]));for(const e of activeEntries(s)){for(const t of e.transfers){result[t.from]=(result[t.from]||0)-t.cents;result[t.to]=(result[t.to]||0)+t.cents;}}return result;};
   const getRoundInfo=s=>{let round=1;const map={};for(const e of allEntries(s)){map[e.id]=round;if(!e.voided&&e.type==='win')round++;}return {map,next:round,completed:round-1};};
-  const getStats=s=>{const balances=getBalances(s);const result=s.players.map(p=>({id:p.id,name:p.name,active:s.seats.includes(p.id),wins:0,zimo:0,discardWin:0,discarded:0,exposed:0,concealed:0,flies:0,balance:balances[p.id]||0}));const m=Object.fromEntries(result.map(x=>[x.id,x]));for(const e of activeEntries(s)){if(e.type==='win'&&m[e.winner]){m[e.winner].wins++;if(e.subtype==='zimo')m[e.winner].zimo++;else{m[e.winner].discardWin++;if(m[e.discarder])m[e.discarder].discarded++;}m[e.winner].flies+=Number(e.flies)||0;}if(e.type==='kong'&&m[e.actor]){if(e.subtype==='exposed')m[e.actor].exposed++;else m[e.actor].concealed++;}}return result;};
+  const getStats=s=>{const balances=getBalances(s);const result=s.players.map(p=>({id:p.id,name:p.name,active:s.seats.includes(p.id),wins:0,zimo:0,discardWin:0,discarded:0,exposed:0,concealed:0,flies:0,fanHK:0,fanMCR:0,balance:balances[p.id]||0}));const m=Object.fromEntries(result.map(x=>[x.id,x]));for(const e of activeEntries(s)){if(e.type==='win'&&m[e.winner]){m[e.winner].wins++;if(e.subtype==='zimo')m[e.winner].zimo++;else{m[e.winner].discardWin++;if(m[e.discarder])m[e.discarder].discarded++;}m[e.winner].flies+=Number(e.flies)||0;if(e.fan?.used){if(e.fan.mode==='hk')m[e.winner].fanHK+=Number(e.fan.points)||0;else if(e.fan.mode==='mcr')m[e.winner].fanMCR+=Number(e.fan.points)||0;}}if(e.type==='kong'&&m[e.actor]){if(e.subtype==='exposed')m[e.actor].exposed++;else m[e.actor].concealed++;}}return result;};
   const getPayments=s=>{const balances=getBalances(s);const owe=Object.entries(balances).filter(([,x])=>x<0).map(([id,x])=>({id,remaining:-x})).sort((a,b)=>b.remaining-a.remaining);const paid=Object.entries(balances).filter(([,x])=>x>0).map(([id,x])=>({id,remaining:x})).sort((a,b)=>b.remaining-a.remaining);const result=[];let i=0,j=0;while(i<owe.length&&j<paid.length){const n=Math.min(owe[i].remaining,paid[j].remaining);if(n>0)result.push({from:owe[i].id,to:paid[j].id,cents:n});owe[i].remaining-=n;paid[j].remaining-=n;if(!owe[i].remaining)i++;if(!paid[j].remaining)j++;}return result;};
   const volume=e=>e.transfers.reduce((s,t)=>s+t.cents,0);
   const migrate=s=>{if(!s||typeof s!=='object')throw Error('不正确的备份');if(s.version===2){if(!Array.isArray(s.players)||s.players.length<4||!Array.isArray(s.seats)||s.seats.length!==4||!Array.isArray(s.entries)||!s.rates)throw Error('备份缺少玩家、座位或记录');return {...s,nextSeq:Math.max(1,...s.entries.map(e=>(Number(e.seq)||0)+1))};}if(s.version!==1||!Array.isArray(s.players)||s.players.length!==4||!Array.isArray(s.entries))throw Error('不支持的备份格式');const players=s.players.map((n,i)=>({id:'legacy-'+i,name:String(n).slice(0,24),createdAt:s.startedAt||Date.now()}));return {version:2,gameName:s.gameName||'麻将牌局',createdAt:s.startedAt||Date.now(),players,seats:players.map(p=>p.id),rates:{...RATES,...s.rates},entries:s.entries.map((e,i)=>({...e,id:'legacy-entry-'+i,seq:i+1,voided:false,winner:Number.isInteger(e.winner)?players[e.winner].id:null,discarder:Number.isInteger(e.discarder)?players[e.discarder].id:null,actor:Number.isInteger(e.actor)?players[e.actor].id:null,transfers:e.transfers.map(t=>({from:players[t.from].id,to:players[t.to].id,cents:t.cents}))})),nextSeq:s.entries.length+1};};
@@ -85,9 +86,9 @@
     if(!haveSeat(ui.discarder)||ui.discarder===ui.winner)ui.discarder=firstOther(ui.winner);
     if(!haveSeat(ui.kongPayer)||ui.kongPayer===ui.actor)ui.kongPayer=firstOther(ui.actor);
   }
-  function makeTransfers(s,form){const results=[],seat=s.seats,rate=s.rates;const tx=(from,to,n)=>{const v=cents(n);if(Number.isInteger(v)&&v>0&&v<=9999900)results.push({from,to,cents:v});};if(form.type==='win'){if(!seat.includes(form.winner))return [];if(form.method==='discard'&&(!seat.includes(form.discarder)||form.discarder===form.winner))return [];for(const id of seat)if(id!==form.winner){const basic=form.method==='zimo'?rate.selfDraw:(id===form.discarder?rate.discard:rate.normal);tx(id,form.winner,basic+form.flies*rate.fly);}}else if(form.type==='kong'){if(!seat.includes(form.actor))return [];if(form.kongPay==='one'&&(!seat.includes(form.kongPayer)||form.kongPayer===form.actor))return [];for(const id of seat)if(id!==form.actor&&(form.kongPay==='all'||id===form.kongPayer))tx(id,form.actor,rate[form.kong]);}else{const a=cents(form.adjustAmount);if(seat.includes(form.adjustFrom)&&seat.includes(form.adjustTo)&&form.adjustFrom!==form.adjustTo&&a>0)results.push({from:form.adjustFrom,to:form.adjustTo,cents:a});}return results;}
-  function getForm(){return {...ui,adjustFrom:$('adjustFrom').value,adjustTo:$('adjustTo').value,adjustAmount:$('adjustAmount').value,note:$('entryNote').value.trim().slice(0,80)};}
-  function describe(e){if(e.type==='win')return `${nameOf(game,e.winner)} ${e.subtype==='zimo'?'自摸':'胡牌（'+nameOf(game,e.discarder)+' 点炮）'}${e.flies?' · 飞 '+e.flies+' 粒':''}`;if(e.type==='kong')return `${nameOf(game,e.actor)} ${e.subtype==='exposed'?'明杠':'暗杠'}`;return `${nameOf(game,e.transfers[0]?.from)} → ${nameOf(game,e.transfers[0]?.to)} 转账调整`;}
+  function makeTransfers(s,form){const results=[],seat=s.seats,rate=s.rates;const tx=(from,to,n)=>{const v=cents(n);if(Number.isInteger(v)&&v>0&&v<=9999900)results.push({from,to,cents:v});};if(form.type==='win'){if(!seat.includes(form.winner))return [];if(form.method==='discard'&&(!seat.includes(form.discarder)||form.discarder===form.winner))return [];for(const id of seat)if(id!==form.winner){const basic=form.method==='zimo'?rate.selfDraw:(id===form.discarder?rate.discard:rate.normal);const fanExtra=window.MahjongFan?.priceExtra(form,s)||0;tx(id,form.winner,basic+form.flies*rate.fly+fanExtra);}}else if(form.type==='kong'){if(!seat.includes(form.actor))return [];if(form.kongPay==='one'&&(!seat.includes(form.kongPayer)||form.kongPayer===form.actor))return [];for(const id of seat)if(id!==form.actor&&(form.kongPay==='all'||id===form.kongPayer))tx(id,form.actor,rate[form.kong]);}else{const a=cents(form.adjustAmount);if(seat.includes(form.adjustFrom)&&seat.includes(form.adjustTo)&&form.adjustFrom!==form.adjustTo&&a>0)results.push({from:form.adjustFrom,to:form.adjustTo,cents:a});}return results;}
+  function getForm(){return {...ui,adjustFrom:$('adjustFrom').value,adjustTo:$('adjustTo').value,adjustAmount:$('adjustAmount').value,note:$('entryNote').value.trim().slice(0,80),fan:window.MahjongFan?.getPending(ui.method)||null};}
+  function describe(e){if(e.type==='win')return `${nameOf(game,e.winner)} ${e.subtype==='zimo'?'自摸':'胡牌（'+nameOf(game,e.discarder)+' 点炮）'}${e.flies?' · 飞 '+e.flies+' 粒':''}${e.fan?.used?' · '+e.fan.points+(e.fan.mode==='mcr'?'分（旧记录）':'番'):''}`;if(e.type==='kong')return `${nameOf(game,e.actor)} ${e.subtype==='exposed'?'明杠':'暗杠'}`;return `${nameOf(game,e.transfers[0]?.from)} → ${nameOf(game,e.transfers[0]?.to)} 转账调整`;}
   function whoHtml(id){return esc(nameOf(game,id));}
   function scoreRanks(){
     const balances=getBalances(game);
@@ -115,7 +116,7 @@
   function choiceHtml(current,exclude){return game.seats.map((id,i)=>`<button class="choice ${id===current?'active':''}" data-id="${esc(id)}" ${id===exclude?'disabled':''}><small>${SEATS[i]}位</small>${whoHtml(id)}</button>`).join('');}
   function updateChoices(){syncChoice();$('winnerChoice').innerHTML=choiceHtml(ui.winner,null);$('discardChoice').innerHTML=choiceHtml(ui.discarder,ui.winner);$('actorChoice').innerHTML=choiceHtml(ui.actor,null);$('kongPayerChoice').innerHTML=choiceHtml(ui.kongPayer,ui.actor);for(const [id,key,val] of [['typeButtons','type',ui.type],['winMethods','method',ui.method],['kongMethods','kong',ui.kong],['kongPayMethods','kongPay',ui.kongPay]]){$(id).querySelectorAll('button').forEach(b=>b.classList.toggle('active',(b.dataset.type||b.dataset.value)===val));}for(const [id,show] of [['winFields',ui.type==='win'],['kongFields',ui.type==='kong'],['adjustFields',ui.type==='adjust'],['discardField',ui.type==='win'&&ui.method==='discard'],['kongPayerField',ui.type==='kong'&&ui.kongPay==='one']])$(id).classList.toggle('hidden',!show);$('flyValue').textContent=ui.flies;const pairs=game.seats.map(id=>`<option value="${esc(id)}">${whoHtml(id)}</option>`).join('');for(const id of ['adjustFrom','adjustTo']){const select=$(id),old=select.value;select.innerHTML=pairs;select.value=game.seats.includes(old)?old:(id==='adjustFrom'?game.seats[0]:game.seats[1]);}if($('adjustFrom').value===$('adjustTo').value)$('adjustTo').value=firstOther($('adjustFrom').value);drawPreview();}
   function drawPreview(){const form=getForm(),transfers=makeTransfers(game,form);$('previewRound').textContent='第 '+getRoundInfo(game).next+' 局';$('previewLines').innerHTML=transfers.length?transfers.map(t=>`<div class="preview-line"><span>${whoHtml(t.from)} → ${whoHtml(t.to)}</span><b>${money(t.cents)}</b></div>`).join(''):'<div class="empty">请检查选择的玩家与金额。</div>';$('previewAmount').textContent=money(transfers.reduce((s,t)=>s+t.cents,0));$('recordBtn').disabled=busy||(!cloudReady&&cloudMode)||!transfers.length;}
-  function historyItem(e,round){return `<div class="history-item ${e.voided?'voided':''}"><div class="history-content"><div class="history-title">第 ${round} 局 · ${esc(describe(e))} ${e.voided?'<span class="former">已撤销</span>':''}</div><div class="history-sub">${fmtTime(e.ts)} · ${money(volume(e))}${e.note?' · '+esc(e.note):''}</div></div><div class="history-right"><button class="btn small ${e.voided?'':'danger'}" data-entry="${esc(e.id)}" data-undo="${e.voided?'0':'1'}">${e.voided?'恢复':'撤销'}</button></div></div>`;}
+  function historyItem(e,round){return `<div class="history-item ${e.voided?'voided':''}"><div class="history-content"><div class="history-title">第 ${round} 局 · ${esc(describe(e))} ${e.voided?'<span class="former">已撤销</span>':''}</div><div class="history-sub">${fmtTime(e.ts)} · ${money(volume(e))}${e.note?' · '+esc(e.note):''}</div></div><div class="history-right">${e.fan?.used?`<button class="btn small" data-fan-record="${esc(e.id)}">演示牌型</button>`:''}<button class="btn small ${e.voided?'':'danger'}" data-entry="${esc(e.id)}" data-undo="${e.voided?'0':'1'}">${e.voided?'恢复':'撤销'}</button></div></div>`;}
   function history(){const all=allEntries(game),info=getRoundInfo(game);$('historyRows').innerHTML=all.length?all.slice().reverse().map(e=>historyItem(e,info.map[e.id])).join(''):'<div class="empty">尚未记录任何一局。</div>';$('recentRows').innerHTML=all.filter(e=>!e.voided).slice(-4).reverse().map(e=>`<div class="preview-line"><span>第${info.map[e.id]}局 · ${esc(describe(e))}</span><b>${money(volume(e))}</b></div>`).join('')||'<div class="empty">暂时没有记录。</div>';}
   function stats(){
     const ranks=scoreRanks();
@@ -123,7 +124,7 @@
       if(a.active!==b.active)return a.active?-1:1;
       return a.active?ranks[a.id]-ranks[b.id]:a.name.localeCompare(b.name,'zh');
     });
-    $('statsRows').innerHTML=rows.map(p=>`<tr><td>${p.active?'<span class="rank-number" style="width:23px;height:23px;font-size:13px">'+ranks[p.id]+'</span>':'—'}</td><td><b>${esc(p.name)}</b>${p.active?'':'<span class="former">离席</span>'}</td><td>${p.wins}</td><td>${p.zimo}</td><td>${p.discardWin}</td><td>${p.discarded}</td><td>${p.exposed}</td><td>${p.concealed}</td><td>${p.flies}</td><td class="${p.balance>0?'positive':p.balance<0?'negative':'zero'}"><b>${signed(p.balance)}</b></td></tr>`).join('');
+    $('statsRows').innerHTML=rows.map(p=>`<tr><td>${p.active?'<span class="rank-number" style="width:23px;height:23px;font-size:13px">'+ranks[p.id]+'</span>':'—'}</td><td><b>${esc(p.name)}</b>${p.active?'':'<span class="former">离席</span>'}</td><td>${p.wins}</td><td>${p.zimo}</td><td>${p.discardWin}</td><td>${p.discarded}</td><td>${p.exposed}</td><td>${p.concealed}</td><td>${p.flies}</td><td>${p.fanHK?p.fanHK+'番':'—'}</td><td class="${p.balance>0?'positive':p.balance<0?'negative':'zero'}"><b>${signed(p.balance)}</b></td></tr>`).join('');
   }
   function settlements(){const balances=getBalances(game),payments=getPayments(game);$('settleBalances').innerHTML=game.players.map(p=>`<div class="settle-line"><span>${esc(p.name)}${game.seats.includes(p.id)?'':' <span class="former">离席</span>'}</span><strong class="${balances[p.id]>0?'positive':balances[p.id]<0?'negative':'zero'}">${signed(balances[p.id]||0)}</strong></div>`).join('');$('settlePayments').innerHTML=payments.length?payments.map(t=>`<div class="settle-line"><span>${whoHtml(t.from)} → ${whoHtml(t.to)}</span><strong>${money(t.cents)}</strong></div>`).join(''):'<div class="empty">目前无须转账。</div>';}
   function settings(){
@@ -137,6 +138,7 @@
       </div>`;
     }).join('');
     $('rateSettings').innerHTML=RATE_INFO.map(([key,label])=>`<label>${label}<input class="field" id="rate-${key}" type="number" step="0.01" min="0" max="99999" inputmode="decimal" value="${Number(game.rates[key]).toFixed(2)}"></label>`).join('');
+    const fan={...FAN_DEFAULT,...(game.fanConfig||{})};$('fanEnabled').checked=fan.mode==='mcr'?false:fan.enabled;$('fanModeRoom').value='hk';$('fanPriceEnabled').checked=fan.mode==='mcr'?false:fan.priceEnabled;$('fanPricePerUnit').value=Number(fan.pricePerUnit).toFixed(2);$('fanHkMin').value=fan.hkMin;$('fanHkCap').value=fan.hkCap;
   }
   function canManageRoom(room){return !cloudMode || !!cloud?.canManage(room);}
   function roomList(){
@@ -173,8 +175,8 @@
     game=currentRoom();
     $('gameArea').classList.toggle('hidden',!game);
     for(const id of ['csvBtn','backupBtn'])$(id).disabled=!game;
-    if(!game)return;
-    syncChoice();scores();updateChoices();history();stats();settlements();
+    if(!game){window.MahjongFan?.setGame(null);return;}
+    window.MahjongFan?.setGame(game);syncChoice();scores();updateChoices();history();stats();settlements();
     if(ui.tab==='settings')settings();
   }
   function switchTab(tab){ui.tab=tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id==='panel-'+tab));if(tab==='settings')settings();}
@@ -238,6 +240,13 @@
   async function record(){
     if(busy||!game)return;
     const form=getForm(),initialSeats=game.seats.slice(),initialRates=JSON.stringify(game.rates);
+    if(form.type==='win'&&form.fan?.used){
+      const ids=(form.fan.patterns||[]).map(p=>p.id);
+      const mustZimo=['self','kongflower','doublekong'];
+      const mustDiscard=['robkong'];
+      if(form.method!=='zimo'&&ids.some(x=>mustZimo.includes(x))){notify('所选番型需要自摸；请先更改胡牌方式或重新选择番型');return;}
+      if(form.method!=='discard'&&ids.some(x=>mustDiscard.includes(x))){notify('所选番型要求点和／抢杠；请核对胡牌方式');return;}
+    }
     const proposed=makeTransfers(game,form);
     if(!proposed.length){notify('请选择正确的玩家和金额');return;}
     setBusy(true);
@@ -248,10 +257,10 @@
         if(JSON.stringify(meta.seats)!==JSON.stringify(initialSeats)||JSON.stringify(meta.rates)!==initialRates)throw Error('座位或规则已更新，请重新确认');
         const transfers=makeTransfers(meta,form);
         if(!transfers.length)throw Error('本笔金额无效');
-        entry={id:entryId,seq:meta.nextSeq++,ts:Date.now(),type:form.type,subtype:form.type==='win'?form.method:form.type==='kong'?form.kong:'manual',winner:form.type==='win'?form.winner:null,discarder:form.type==='win'&&form.method==='discard'?form.discarder:null,actor:form.type==='kong'?form.actor:null,flies:form.type==='win'?form.flies:0,note:form.note,transfers,voided:false};
+        entry={id:entryId,seq:meta.nextSeq++,ts:Date.now(),type:form.type,subtype:form.type==='win'?form.method:form.type==='kong'?form.kong:'manual',winner:form.type==='win'?form.winner:null,discarder:form.type==='win'&&form.method==='discard'?form.discarder:null,actor:form.type==='kong'?form.actor:null,flies:form.type==='win'?form.flies:0,note:form.note,fan:form.type==='win'?form.fan:null,transfers,voided:false};
         meta.entries.push(entry);
       });
-      ui.flies=0;$('entryNote').value='';render();
+      ui.flies=0;window.MahjongFan?.clearPending();$('entryNote').value='';render();
       notify('已记账：'+money(volume(entry)));
     }catch(err){notify('记账失败：'+humanErr(err));console.error(err);}
     finally{setBusy(false);}
@@ -273,7 +282,7 @@
     }catch(err){notify('操作失败：'+humanErr(err));}
     finally{setBusy(false);}
   }
-  function csvExport(){const rows=[['序号','局数','状态','记录时间','类型','详细内容','付款人','收款人','金额(RM)','备注']];const info=getRoundInfo(game);for(const e of allEntries(game))for(const t of e.transfers)rows.push([e.seq,info.map[e.id],e.voided?'已撤销':'有效',fmtTime(e.ts),e.type,describe(e),nameOf(game,t.from),nameOf(game,t.to),(t.cents/100).toFixed(2),e.note||'']);const cell=v=>{let txt=String(v);if(/^[=+@\-\t\r]/.test(txt))txt="'"+txt;return '"'+txt.replace(/"/g,'""')+'"';};download('麻将计分_'+safeFilename()+'.csv','\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8');}
+  function csvExport(){const rows=[['序号','局数','状态','记录时间','类型','详细内容','番制','番／分','番种','付款人','收款人','金额(RM)','备注']];const info=getRoundInfo(game);for(const e of allEntries(game))for(const t of e.transfers)rows.push([e.seq,info.map[e.id],e.voided?'已撤销':'有效',fmtTime(e.ts),e.type,describe(e),e.fan?.mode||'',e.fan?.points??'',e.fan?.patterns?.map(x=>x.name).join('、')||'',nameOf(game,t.from),nameOf(game,t.to),(t.cents/100).toFixed(2),e.note||'']);const cell=v=>{let txt=String(v);if(/^[=+@\-\t\r]/.test(txt))txt="'"+txt;return '"'+txt.replace(/"/g,'""')+'"';};download('麻将计分_'+safeFilename()+'.csv','\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8');}
   function safeFilename(){return game.gameName.replace(/[\\/:*?"<>|\s]/g,'_').slice(0,28)||'牌局';}
   function download(filename,content,mime){const url=URL.createObjectURL(new Blob([content],{type:mime}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}
   function backup(){
@@ -516,6 +525,7 @@
       const quick=e.target.closest('[data-quick-winner]');if(quick){ui.type='win';ui.winner=quick.dataset.quickWinner;ui.discarder=firstOther(ui.winner);switchTab('new');updateChoices();$('recordBtn').scrollIntoView({behavior:'smooth',block:'center'});notify('已选择赢家，确认胡牌方式后记账');return;}
       const rename=e.target.closest('[data-rename]');if(rename){renameSeat(Number(rename.dataset.rename));return;}
       const swap=e.target.closest('[data-swap]');if(swap){changeSeat(Number(swap.dataset.swap));return;}
+      const oldFan=e.target.closest('[data-fan-record]');if(oldFan){const e0=game?.entries.find(x=>x.id===oldFan.dataset.fanRecord);if(e0?.fan){window.MahjongFan?.showRecordedFan(e0.fan);switchTab('fan');}return;}
       const entry=e.target.closest('[data-entry]');if(entry){toggleEntry(entry.dataset.entry,entry.dataset.undo==='1');return;}
     });
     $('typeButtons').addEventListener('click',e=>{const b=e.target.closest('button[data-type]');if(b){ui.type=b.dataset.type;updateChoices();}});
@@ -534,6 +544,11 @@
     $('backupAllBtn').addEventListener('click',backupAll);
     $('backupAllLobby').addEventListener('click',backupAll);
     $('copySettlement').addEventListener('click',()=>copy(settlementText()));
+    $('saveFanSettings').addEventListener('click',()=>{
+      const newFan={enabled:$('fanEnabled').checked,mode:'hk',priceEnabled:$('fanPriceEnabled').checked,pricePerUnit:Number($('fanPricePerUnit').value),hkMin:Number($('fanHkMin').value),hkCap:Number($('fanHkCap').value)};
+      if(newFan.mode!=='hk'||!Number.isInteger(newFan.hkMin)||newFan.hkMin<0||newFan.hkMin>13||!Number.isInteger(newFan.hkCap)||newFan.hkCap<1||newFan.hkCap>30||newFan.hkMin>newFan.hkCap||!Number.isFinite(newFan.pricePerUnit)||newFan.pricePerUnit<0||newFan.pricePerUnit>1000||Math.round(newFan.pricePerUnit*100)!==newFan.pricePerUnit*100){notify('番数规则或金额不正确，请重新检查');return;}
+      modifyMeta(()=>({fanConfig:newFan}));
+    });
     $('saveSettings').addEventListener('click',()=>{
       const rates={};
       for(const [key] of RATE_INFO){const val=$('rate-'+key).value.trim();if(!/^\d+(\.\d{1,2})?$/.test(val)||!Number.isInteger(cents(val))){notify('金额请输入 0 到 99999，最多两位小数');return;}rates[key]=Number(val);}
@@ -564,6 +579,7 @@
       game=currentRoom();render();
     });
   }
+  window.MahjongFan?.init({onApply:()=>drawPreview(),onPreview:()=>drawPreview()});
   wire();render();
   if(cloudMode){
     if(!cloud){cloudStatus='找不到云端连接模块，请检查 cloud-sync.js';roomList();}

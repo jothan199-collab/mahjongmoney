@@ -1,0 +1,75 @@
+/* Mahjong Money v7 fan studio — self-contained Mahjong tile illustration */
+.fan-intro{display:flex;gap:13px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.fan-mark{font-size:12px;color:#b8d0d1;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.fan-studio{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.73fr);gap:17px}
+.fan-module{border:1px solid #355761;background:linear-gradient(165deg,#172e3b,#102330);border-radius:16px;padding:18px;margin-bottom:16px}
+.fan-module h3{margin:0 0 8px;font-size:17px}
+.fan-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:800}
+.fan-toggle input{accent-color:#7ce5b0;width:20px;height:20px}
+.fan-lead{font-size:13px;color:#a7c2ca;line-height:1.7;margin:9px 0 12px}
+.fan-chip-row{display:flex;flex-wrap:wrap;gap:7px}
+.fan-chip{border:1px solid #416c69;background:#213d45;border-radius:999px;color:#daeee8;min-height:34px;padding:7px 12px;font-size:12px;font-weight:750}
+.fan-chip.is-on{border-color:#8ef1bd;background:#2d6954;color:#effff6}
+.fan-browse{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:13px}
+.fan-browse .field{max-width:250px}
+.fan-rule-list{max-height:555px;overflow:auto;padding-right:3px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fan-rule{display:flex;gap:9px;align-items:flex-start;text-align:left;padding:12px;background:#17303c;border:1px solid #31525f;border-radius:11px;color:#edf8f2;min-width:0}
+.fan-rule:hover{border-color:#79c9a5;background:#204137}
+.fan-rule.selected{border-color:#aeeabc;background:#254b41}
+.fan-rule .fan-points{min-width:42px;padding:6px 4px;text-align:center;border-radius:8px;background:#2e5449;color:#d4ffe9;font-size:13px;font-weight:900}
+.fan-rule .fan-rule-text{min-width:0;flex:1;font-size:13px;line-height:1.35}
+.fan-rule .fan-rule-text b{display:block;font-size:14px;margin-bottom:5px}
+.fan-rule .fan-rule-text small{display:block;color:#b3cbd1;font-size:11px;line-height:1.5}
+.fan-rule .fan-index{color:#82a8a5;font-size:10px}
+.fan-banner{display:grid;grid-template-columns:1fr auto;gap:13px;align-items:center;border-radius:13px;padding:13px;background:#17312e;border:1px solid #466a5b;margin-bottom:13px}
+.fan-banner .big-score{font-size:30px;font-weight:900;color:#8df1bd;letter-spacing:-.6px}
+.fan-note{font-size:12px;line-height:1.65;color:#b3c9ce}
+.fan-mini-muted{color:#97adb8;font-size:11px}
+.fan-selected{min-height:36px;font-size:12px;color:#b8cfce;line-height:1.6}
+.fan-demo{background:linear-gradient(155deg,#162734,#0e1f2b);border:1px solid #355964;border-radius:16px;padding:16px;margin-bottom:16px;overflow:hidden}
+.fan-demo-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.fan-demo-name{font-size:20px;font-weight:900;color:#e4fcef}
+.fan-table{position:relative;min-height:190px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:13px;border-radius:15px;background:radial-gradient(circle at 50% 0%,#184e42,#10392f 56%,#0d2c2c);border:1px solid #276352;margin:14px 0;padding:20px 11px;box-shadow:inset 0 0 25px #041a173b}
+.fan-sets{display:flex;justify-content:center;flex-wrap:wrap;gap:9px 12px;width:100%}
+.fan-set{display:flex;align-items:center;justify-content:center;gap:3px;padding:4px;border:1px solid #7dab7950;border-radius:9px;background:#ffffff0d}
+.fan-tile{display:inline-flex;position:relative;width:39px;height:55px;flex-shrink:0;align-items:center;justify-content:center;flex-direction:column;border-radius:5px;background:linear-gradient(160deg,#fff 0%,#fff 75%,#e4eee9 100%);box-shadow:2px 4px 0 #b8c8bc,3px 5px 3px #0007;border:2px solid #e3ece7;color:#19212a;user-select:none}
+.fan-tile .fan-number{font-family:serif;font-size:22px;font-weight:900;color:#131f29;line-height:1.0}
+.fan-tile .fan-wan{font-size:16px;color:#bb3037;font-weight:900;line-height:1.0}
+.fan-tile .fan-honor{font-family:serif;font-size:31px;font-weight:900;line-height:1}
+.fan-tile .fan-honor.green{color:#188747}.fan-tile .fan-honor.red{color:#c54246}.fan-tile .fan-honor.white{font-size:22px;border:2px solid #25518c;border-radius:4px;color:#25518c;padding:2px}
+.fan-tile .fan-dots{display:grid;grid-template-columns:repeat(3,7px);grid-auto-rows:7px;gap:2px;place-items:center;align-content:center;height:39px}
+.fan-tile .fan-dot{width:7px;height:7px;border:1px solid #18335e;border-radius:50%;background:#2c6ab0;box-shadow:inset 0 0 0 1px #9fc2f3}
+.fan-tile .fan-dot.red{background:#bf3447;border-color:#8c2430;box-shadow:inset 0 0 0 1px #eab4bd}.fan-tile .fan-dot.green{background:#2a9361;border-color:#1b6747;box-shadow:inset 0 0 0 1px #b2dbc0}
+.fan-tile .fan-bamboo{display:grid;grid-template-columns:repeat(3,7px);grid-auto-rows:13px;gap:1px;align-items:center;justify-items:center;height:39px}
+.fan-tile .fan-stick{width:5px;height:12px;border-radius:2px 2px 5px 5px;background:repeating-linear-gradient(0deg,#0b7843 0,#329b5c 4px,#0d683d 5px,#7cbb65 6px);border:1px solid #236b38;transform:rotate(-3deg)}
+.fan-tile .fan-stick.red{background:repeating-linear-gradient(0deg,#b83a42 0,#e2776f 4px,#a52b37 6px)}
+.fan-tile .fan-bird{font-size:23px;line-height:1}
+.fan-tile.demo-enter{animation:fanDeal .4s ease both;animation-delay:calc(var(--deal-index,0)*45ms)}
+@keyframes fanDeal{from{opacity:0;transform:translateY(-26px) rotate(-7deg) scale(.88)}to{opacity:1;transform:translateY(0) rotate(0) scale(1)}}
+.fan-tile.last-tile{outline:2px solid #efcd7f;outline-offset:2px}
+.fan-demo-message{text-align:center;font-size:12px;color:#c5dad7;line-height:1.6;max-width:600px}
+.fan-tile-selector{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px;margin:11px 0 18px}
+.fan-tile-selector button{border:0;background:transparent;padding:0;cursor:pointer;min-width:0}
+.fan-tile-selector .fan-tile{width:100%;height:45px;box-shadow:1px 2px 0 #b9c9bd;border-width:1px}
+.fan-tile-selector .fan-tile .fan-number{font-size:15px}.fan-tile-selector .fan-tile .fan-wan{font-size:11px}.fan-tile-selector .fan-tile .fan-honor{font-size:20px}.fan-tile-selector .fan-tile .fan-dots{transform:scale(.69)}.fan-tile-selector .fan-tile .fan-bamboo{transform:scale(.72)}.fan-tile-selector .fan-tile .fan-bird{font-size:18px}
+.fan-hand{display:flex;gap:5px;flex-wrap:wrap;min-height:73px;padding:10px;border:1px dashed #496968;border-radius:10px;align-items:center;margin-top:8px}
+.fan-hand .fan-tile{cursor:pointer}.fan-hand .fan-empty-slot{width:39px;height:55px;border-radius:5px;border:1px dashed #4c6973;background:#0b1e24;display:grid;place-items:center;color:#65848b;font-size:10px}
+.fan-lower{font-size:12px;color:#aec7c7;line-height:1.65}
+.fan-group-label{font-size:12px;color:#f2d38c;font-weight:800;margin:10px 0 6px}
+.fan-selected-tags{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.fan-selected-tags .fan-chip{min-height:30px;padding:5px 9px;font-weight:700}
+.fan-rule-description{min-height:44px;font-size:12px;color:#c3d9d6;line-height:1.7;margin-top:7px}
+.fan-standby{border:1px solid #3a6659;background:#18342e;border-radius:12px;padding:13px 14px;margin:12px 0}
+.fan-standby p{margin:6px 0;color:#b1cbc2;font-size:12px;line-height:1.65}
+.fan-preview-row{display:flex;gap:9px;justify-content:space-between;font-size:12px;color:#dae8e2;margin-top:6px}
+.fan-preview-row b{color:#b5f0cd}
+.fan-plain-select{width:100%;max-width:320px}
+.fan-inline-settings{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:10px 0 0}
+.fan-inline-settings label{font-size:12px;color:#d2e8e0}
+.fan-inline-settings input[type=number]{max-width:95px}
+.fan-rule .fan-manual{font-size:10px;color:#e8cf89}
+@media(max-width:850px){.fan-studio{grid-template-columns:1fr}.fan-rule-list{max-height:400px}}
+@media(max-width:490px){.fan-tile{width:29px;height:43px;box-shadow:1px 3px 0 #b6c7bf;border-radius:4px}.fan-tile .fan-number{font-size:16px}.fan-tile .fan-wan{font-size:12px}.fan-tile .fan-honor{font-size:24px}.fan-tile .fan-honor.white{font-size:17px}.fan-tile .fan-dots{transform:scale(.7)}.fan-tile .fan-bamboo{transform:scale(.7)}.fan-tile .fan-bird{font-size:19px}.fan-rule-list{grid-template-columns:1fr}.fan-rule .fan-rule-text b{font-size:13px}.fan-table{min-height:142px;padding:14px 5px}.fan-set{gap:2px;padding:3px}.fan-sets{gap:8px}.fan-hand .fan-empty-slot{width:29px;height:43px}.fan-tile-selector{gap:3px}.fan-tile-selector .fan-tile{height:39px}}
+@media(prefers-reduced-motion:reduce){.fan-tile.demo-enter{animation:none}}
+
+.fan-rules-label{display:inline-flex;align-items:center;min-height:38px;border:1px solid #35624e;border-radius:10px;background:#14382f;color:#d6ffe5;padding:8px 12px;font-size:13px;font-weight:750}
